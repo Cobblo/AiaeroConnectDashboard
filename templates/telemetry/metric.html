@@ -1,0 +1,68 @@
+{% load static %}
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>{{ title }} • AIAERO CONNECT</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link href="{% static 'css/dashboard.css' %}" rel="stylesheet">
+  <script src="{% static 'js/chart.umd.min.js' %}"></script>
+  <script defer src="{% static 'js/metric.js' %}"></script>
+</head>
+<body class="bg">
+  <div class="bg-gradient"></div>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="avatar"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 12a5 5 0 1 0-5-5 5 5 0 0 0 5 5Zm0 2c-4.33 0-8 2.17-8 5v1h16v-1c0-2.83-3.67-5-8-5Z"/></svg></div>
+        <div><h1>AIAERO<br><span>CONNECT</span></h1></div>
+      </div>
+      <nav class="nav">
+        <a class="nav-item" href="/">Home</a>
+        <a class="nav-item{% if metric=='spo2' %} active{% endif %}" href="/spo2/">SpO₂</a>
+        <a class="nav-item{% if metric=='bp' %} active{% endif %}" href="/bp/">Blood Pressure</a>
+        <a class="nav-item{% if metric=='temp' %} active{% endif %}" href="/temp/">Temperature</a>
+        <a class="nav-item{% if metric=='hr' %} active{% endif %}" href="/hr/">Heartbeat</a>
+        <a class="nav-item" href="/location/">Location</a>
+      </nav>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div>
+          <h2>{{ title }}</h2>
+          <small>Device series • Offline</small>
+        </div>
+        <div class="user">
+          <select id="deviceSelect" class="hamburger" style="width:auto;padding:6px 8px;border-radius:10px;border:1px solid var(--line);background:#182038;color:#c7d3ea">
+            {% for d in devices %}
+              <option value="{{ d.device_id }}">{{ d.label|default:d.device_id }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </header>
+
+      <section class="grid">
+        <div class="card">
+          <h3>Last 200 points</h3>
+          <canvas id="seriesChart" height="300"></canvas>
+        </div>
+        <div class="card">
+          <h3>Recent values</h3>
+          <div id="recentList" style="font-family:monospace; white-space:pre; overflow:auto; max-height:300px;"></div>
+        </div>
+      </section>
+
+      {% if metric == 'bp' %}
+      <script>window.METRIC='bp';</script>
+      {% elif metric == 'spo2' %}
+      <script>window.METRIC='spo2';</script>
+      {% elif metric == 'temp' %}
+      <script>window.METRIC='temp';</script>
+      {% elif metric == 'hr' %}
+      <script>window.METRIC='hr';</script>
+      {% endif %}
+    </main>
+  </div>
+</body>
+</html>

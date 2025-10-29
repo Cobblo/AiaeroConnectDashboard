@@ -1,0 +1,131 @@
+{% load static %}
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Device {{ pid }}</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link href="{% static 'css/dashboard.css' %}" rel="stylesheet">
+
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
+  <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+</head>
+<body class="bg">
+  <div class="bg-gradient"></div>
+
+  <header class="app-header">
+    <div class="brand-row">
+      <img class="brand-logo" src="{% static 'img/Aiaero_logo.png' %}" alt="logo">
+      <div>
+        <h3 class="brand-title">AIAERO CONNECT</h3>
+        <div class="brand-sub">LoRa Telemetry</div>
+      </div>
+    </div>
+    <div class="profile">
+      <a class="profile-btn" href="/">← Back</a>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section class="card">
+      <div class="card-head">
+        <h3 class="card-title">Device: <code id="devId">{{ pid }}</code></h3>
+        <small class="card-sub" id="status">loading…</small>
+      </div>
+
+      <div class="grid-2">
+        <div>
+          <table class="kv">
+            <tbody>
+              <tr><th>Timestamp</th><td id="ts">—</td></tr>
+              <tr><th>Heart rate</th><td id="hr">—</td></tr>
+              <tr><th>SpO₂</th><td id="spo2">—</td></tr>
+              <tr><th>BP (sys/dia)</th><td><span id="bp_sys">—</span>/<span id="bp_dia">—</span></td></tr>
+              <tr><th>Temperature</th><td id="temp">—</td></tr>
+              <tr><th>Latitude</th><td id="lat">—</td></tr>
+              <tr><th>Longitude</th><td id="lon">—</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div>
+          <div id="miniMap" style="height:320px;border-radius:12px;overflow:hidden"></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  {{ pid|json_script:"pid_json" }}
+
+  <script>
+    const deviceId = JSON.parse(document.getElementById('pid_json').textContent);
+    async function getJSON(url){ const r = await fetch(url); if(!r.ok) throw new Error(r.status); return r.json(); }
+    function setText(id, v){ const el = document.getElementById(id); if (el) el.textContent = (v ?? '—'); }
+
+    async function reverseGeocode(lat, lon){
+      try{
+        const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}`);
+        const data = await res.json();
+        const a = data.address || {};
+        return a.suburb || a.village || a.town || a.city || a.county || a.state || (data.display_name||'').split(',')[0] || '';
+      }catch{ return ''; }
+    }
+
+    function addTiles(map){
+      const primary = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19, attribution: '&copy; OpenStreetMap contributors'
+      }).addTo(map);
+
+      primary.on('tileerror', ()=>{
+        try{ map.removeLayer(primary); }catch(e){}
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+          subdomains:'abcd', maxZoom:20,
+          attribution:'&copy; OpenStreetMap contributors &copy; CARTO'
+        }).addTo(map);
+      });
+    }
+
+    async function renderMap(lat, lon){
+      const map = L.map('miniMap').setView([lat, lon], 15);
+      addTiles(map);
+      const m = L.marker([lat, lon]).addTo(map);
+
+      // show place text near marker
+      const place = await reverseGeocode(lat, lon);
+      if (place) m.bindTooltip(place, {direction:'top'}).openTooltip();
+
+      setTimeout(()=> map.invalidateSize(), 50);
+    }
+
+    async function loadLatest(){
+      const q = new URLSearchParams({ device_id: deviceId, limit: '1' });
+      const data = await getJSON('/api/current/?' + q.toString());
+
+      const item = (data.items || [])[0];
+      if (!item){
+        document.getElementById('status').textContent = 'no data yet';
+        return;
+      }
+
+      setText('ts', item.ts);
+      setText('hr', item.hr);
+      setText('spo2', item.spo2);
+      setText('bp_sys', item.bp_sys);
+      setText('bp_dia', item.bp_dia);
+      setText('temp', item.temp);
+      setText('lat', item.lat);
+      setText('lon', item.lon);
+      document.getElementById('status').textContent = 'latest reading';
+
+      const lat = Number(item.lat), lon = Number(item.lon);
+      if (Number.isFinite(lat) && Number.isFinite(lon)){
+        renderMap(lat, lon);
+      }
+    }
+
+    loadLatest().catch(e=>{
+      document.getElementById('status').textContent = 'error loading data';
+      console.error(e);
+    });
+  </script>
+</body>
+</html>

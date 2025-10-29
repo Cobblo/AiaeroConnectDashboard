@@ -1,0 +1,162 @@
+{% load static %}
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>AIAERO CONNECT</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link href="{% static 'css/dashboard.css' %}" rel="stylesheet">
+
+  <!-- Leaflet -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
+  <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+</head>
+
+<body class="bg">
+  <div class="bg-gradient"></div>
+
+  <!-- Header -->
+  <header class="app-header">
+    <div class="brand-row">
+      <img class="brand-logo" src="{% static 'img/Aiaero_logo.png' %}" alt="logo">
+      <div>
+        <h3 class="brand-title">AIAERO CONNECT</h3>
+        <div class="brand-sub">LoRa Telemetry</div>
+      </div>
+    </div>
+
+    <div class="profile">
+      {% if request.user.is_authenticated %}
+        <a class="profile-btn" href="{% url 'profile' %}">
+          <div class="avatar-sm">👤</div>
+          <span>{{ request.user.username }}</span>
+        </a>
+      {% else %}
+        <a class="btn btn-link" href="{% url 'login' %}">Login</a>
+        <a class="btn btn-link" href="{% url 'signup' %}">Sign up</a>
+      {% endif %}
+    </div>
+    
+    </div>
+  </header>
+
+  <!-- Main -->
+  <main class="wrap">
+    <section class="card">
+      <div class="card-head">
+        <h3 class="card-title">Live locations</h3>
+        <small class="card-sub" id="mapSubtitle">waiting for points…</small>
+      </div>
+
+      <div id="leafletMap" aria-label="Live map of soldiers"></div>
+
+      <div class="card-foot">
+        Devices online: <b id="deviceCount">—</b>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    // profile dropdown
+    const btn = document.getElementById('profileBtn');
+    const menu = document.getElementById('profileMenu');
+    btn?.addEventListener('click', (e)=>{ e.stopPropagation(); menu.style.display = menu.style.display==='block'?'none':'block'; });
+    document.addEventListener('click', ()=> menu && (menu.style.display='none'));
+
+    async function getJSON(url){ const r=await fetch(url); if(!r.ok) throw new Error(r.status); return r.json(); }
+
+    // Reverse geocode (short place name)
+    async function reverseGeocode(lat, lon){
+      try{
+        const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}`);
+        const data = await res.json();
+        const a = data.address || {};
+        return a.suburb || a.village || a.town || a.city || a.county || a.state || (data.display_name||'').split(',')[0] || '';
+      }catch{ return ''; }
+    }
+
+    async function loadPoints(){
+      try{
+        const {items=[]} = await getJSON('/api/current/');
+        return items.map(it => ({
+          id:  it.device_id || it.person_id,
+          name: it.device_id || it.person || it.label,
+          lat: Number(it.lat),
+          lon: Number(it.lon)
+        })).filter(p => Number.isFinite(p.lat) && Number.isFinite(p.lon));
+      }catch(e){
+        // fallback to mock
+        const mock = await getJSON('/api/mock/people/');
+        return (mock.people||[]).map(p=>{
+          const last=(p.path&&p.path.length)?p.path[p.path.length-1]:null;
+          return { id:String(p.id), name:String(p.id), lat:(last?last.lat:28.6139), lon:(last?last.lon:77.2090) };
+        });
+      }
+    }
+
+    // tile layer with fallback
+    function addTiles(map){
+      const primary = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19, attribution: '&copy; OpenStreetMap contributors'
+      }).addTo(map);
+
+      primary.on('tileerror', ()=>{
+        try{ map.removeLayer(primary); }catch(e){}
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+          subdomains: 'abcd', maxZoom: 20,
+          attribution: '&copy; OpenStreetMap contributors &copy; CARTO'
+        }).addTo(map);
+      });
+    }
+
+    function pin(lat, lon, labelHtml){
+      const svg = `
+        <svg width="24" height="36" viewBox="0 0 24 36" xmlns="http://www.w3.org/2000/svg">
+          <path d="M12 0C5.9 0 1 4.9 1 11c0 7.1 9.2 23.6 10.1 25.1a1 1 0 0 0 1.8 0C13.8 34.6 23 18.1 23 11 23 4.9 18.1 0 12 0z" fill="#ff3b3b"/>
+          <circle cx="12" cy="11" r="4" fill="#fff"/>
+        </svg>`;
+      const html = `<div style="display:grid;place-items:center;gap:4px">${svg}<div class="pin-label">${labelHtml}</div></div>`;
+      return L.marker([lat, lon], { icon: L.divIcon({ className:'', html, iconSize:[24,36], iconAnchor:[12,36] }) });
+    }
+
+    async function init(){
+      const sub  = document.getElementById('mapSubtitle');
+      const foot = document.getElementById('deviceCount');
+
+      const map = L.map('leafletMap', { zoomControl:true, inertia:true, worldCopyJump:false })
+                   .setView([28.6139, 77.2090], 11);
+
+      addTiles(map);
+
+      const pts = await loadPoints();
+      const group = L.featureGroup().addTo(map);
+
+      for (const p of pts){
+        const m = pin(p.lat, p.lon, p.name)
+          .on('click', ()=>{ if (p.id) window.location.href = '/person/' + encodeURIComponent(p.id) + '/'; })
+          .addTo(group);
+
+        // add small place name tooltip
+        reverseGeocode(p.lat, p.lon).then(place=>{
+          if (place) m.bindTooltip(`${p.name}<br><small>${place}</small>`, {direction:'top'});
+        });
+      }
+
+      if(pts.length){
+        map.fitBounds(group.getBounds().pad(0.2));
+        sub.textContent = `${pts.length} device(s) mapped`;
+        foot.textContent = String(pts.length);
+      }else{
+        sub.textContent = 'no coordinates yet';
+        foot.textContent = '—';
+      }
+
+      setTimeout(()=> map.invalidateSize(), 0);
+      window.addEventListener('resize', ()=> map.invalidateSize());
+    }
+
+    window.addEventListener('load', init);
+  </script>
+</body>
+</html>
+

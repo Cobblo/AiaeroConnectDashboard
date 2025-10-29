@@ -1,0 +1,47 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Test Postbox</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body { font-family: system-ui, Arial; margin: 20px; background: #0b1220; color:#e8eefc; }
+    h1 { margin: 0 0 10px; }
+    .bar { display:flex; gap:10px; align-items:center; margin-bottom:12px; }
+    .pill { background:#19233a; padding:6px 10px; border-radius:999px; font-size:12px; }
+    .card { background:#10192b; border:1px solid #1e2a44; padding:12px; border-radius:12px; margin-bottom:10px; }
+    pre { white-space: pre-wrap; word-break: break-word; margin: 6px 0 0; }
+    code { color:#b0f; }
+    a { color:#9cf; }
+  </style>
+</head>
+<body>
+  <h1>Test Postbox</h1>
+  <div class="bar">
+    <div class="pill">POST here: <code>http://127.0.0.1:8000/debug/postbox/data/</code></div>
+    <div class="pill">Auto-refreshing…</div>
+  </div>
+
+  <div id="list"></div>
+
+  <script>
+    async function load() {
+      try {
+        const r = await fetch("/debug/postbox/data/");
+        const {items=[]} = await r.json();
+        const list = document.getElementById("list");
+        list.innerHTML = items.map((it, idx) => `
+          <div class="card">
+            <div><b>#${items.length - idx}</b> &middot; <small>${it.ts}</small></div>
+            <pre>${JSON.stringify(it.payload, null, 2)}</pre>
+          </div>
+        `).join("") || '<div class="card">No messages yet. Post something!</div>';
+      } catch (e) {
+        console.error(e);
+      }
+    }
+    load();
+    setInterval(load, 2000); // refresh every 2s
+  </script>
+</body>
+</html>
