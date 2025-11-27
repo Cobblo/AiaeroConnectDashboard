@@ -3,160 +3,358 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>AIAERO CONNECT</title>
+  <title>AIAERO CONNECT – Dashboard</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link href="{% static 'css/dashboard.css' %}" rel="stylesheet">
 
-  <!-- Leaflet -->
+  <link href="{% static 'css/dashboard.css' %}" rel="stylesheet">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
-  <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+
+  <style>
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #0b0f19;
+      color: #fff;
+      display: flex;
+      height: 100vh;
+      overflow: hidden;
+    }
+    .sidebar {
+      width: 260px;
+      background: #111520;
+      border-right: 1px solid #222933;
+      padding-top: 20px;
+      display: flex;
+      flex-direction: column;
+    }
+    .sidebar-logo {
+      text-align: center;
+      margin-bottom: 25px;
+    }
+    .sidebar-logo img {
+      width: 80px;
+      opacity: 0.95;
+    }
+    .sidebar h2 {
+      text-align: center;
+      margin-top: 5px;
+      font-size: 18px;
+      font-weight: 600;
+    }
+    .nav-links {
+      flex-grow: 1;
+      padding: 10px 0;
+    }
+    .nav-links a {
+      display: block;
+      padding: 12px 22px;
+      margin: 6px 12px;
+      text-decoration: none;
+      background: #1a2130;
+      color: #e4e4e4;
+      border-radius: 8px;
+      font-size: 14px;
+      transition: 0.2s;
+    }
+    .nav-links a:hover {
+      background: #0056ff;
+      color: #fff;
+    }
+    .main {
+      flex-grow: 1;
+      padding: 20px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+    }
+    .top-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+    }
+    .top-bar-left .title {
+      font-size: 22px;
+      margin-bottom: 4px;
+      font-weight: 600;
+    }
+    .top-bar-left small {
+      opacity: 0.8;
+    }
+    #liveMap {
+      height: 600px;
+      border-radius: 14px;
+      overflow: hidden;
+      position: relative;
+      margin-top: 4px;
+    }
+    .map-badge {
+      position: absolute;
+      right: 12px;
+      top: 12px;
+      z-index: 500;
+      background: rgba(0,0,0,.45);
+      color: #fff;
+      padding: 6px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+    }
+    .leaflet-control-attribution { display: none !important; }
+    .leaflet-tooltip.device-label {
+      background: rgba(0,0,0,.65);
+      color: #fff;
+      border: none;
+      border-radius: 999px;
+      padding: 2px 8px;
+      font-size: 11px;
+    }
+    /* Distance overlay panel */
+    .distance-panel {
+      position: absolute;
+      left: 12px;
+      bottom: 12px;
+      z-index: 600;
+      background: rgba(0,0,0,0.72);
+      color: #fff;
+      padding: 8px 12px;
+      border-radius: 10px;
+      font-size: 11px;
+      max-width: 260px;
+      line-height: 1.4;
+      display: none;
+    }
+    .distance-panel b { display: block; margin-bottom: 4px; }
+    .distance-panel .line { white-space: nowrap; }
+    .leaflet-tooltip.distance-label {
+      background: rgba(0,0,0,0.75);
+      color: #fff;
+      border-radius: 999px;
+      padding: 2px 6px;
+      border: none;
+      font-size: 10px;
+    }
+  </style>
 </head>
 
-<body class="bg">
-  <div class="bg-gradient"></div>
+<body>
+  <div class="sidebar">
+    <div class="sidebar-logo">
+      <img src="{% static 'img/Aiaero_logo.png' %}">
+      <h2>AIAERO CONNECT</h2>
+    </div>
+    <div class="nav-links">
+      <a href="{% url 'dashboard' %}">📍 Live Dashboard</a>
+      <a href="{% url 'tracking_page' %}">🛰 Tracking System</a>
+      <a href="{% url 'person_auto' %}">👤 Device Details</a>
+    </div>
+  </div>
 
-  <!-- Header -->
-  <header class="app-header">
-    <div class="brand-row">
-      <img class="brand-logo" src="{% static 'img/Aiaero_logo.png' %}" alt="logo">
-      <div>
-        <h3 class="brand-title">AIAERO CONNECT</h3>
-        <div class="brand-sub">LoRa Telemetry</div>
+  <div class="main">
+    <div class="top-bar">
+      <div class="top-bar-left">
+        <div class="title">Live Device Connections</div>
+        <small id="liveCount">Loading…</small>
       </div>
     </div>
 
-    <div class="profile">
-      {% if request.user.is_authenticated %}
-        <a class="profile-btn" href="{% url 'profile' %}">
-          <div class="avatar-sm">👤</div>
-          <span>{{ request.user.username }}</span>
-        </a>
-      {% else %}
-        <a class="btn btn-link" href="{% url 'login' %}">Login</a>
-        <a class="btn btn-link" href="{% url 'signup' %}">Sign up</a>
-      {% endif %}
+    <div id="liveMap">
+      <div id="mapBadge" class="map-badge">Loading…</div>
+      <div id="distancePanel" class="distance-panel"></div>
     </div>
-    
-    </div>
-  </header>
-
-  <!-- Main -->
-  <main class="wrap">
-    <section class="card">
-      <div class="card-head">
-        <h3 class="card-title">Live locations</h3>
-        <small class="card-sub" id="mapSubtitle">waiting for points…</small>
-      </div>
-
-      <div id="leafletMap" aria-label="Live map of soldiers"></div>
-
-      <div class="card-foot">
-        Devices online: <b id="deviceCount">—</b>
-      </div>
-    </section>
-  </main>
+  </div>
 
   <script>
-    // profile dropdown
-    const btn = document.getElementById('profileBtn');
-    const menu = document.getElementById('profileMenu');
-    btn?.addEventListener('click', (e)=>{ e.stopPropagation(); menu.style.display = menu.style.display==='block'?'none':'block'; });
-    document.addEventListener('click', ()=> menu && (menu.style.display='none'));
+    const API_URL = `/api/current/recent/?active_minutes=180`;
 
-    async function getJSON(url){ const r=await fetch(url); if(!r.ok) throw new Error(r.status); return r.json(); }
+    let map;
+    let markers = {};
+    let lastItems = [];
+    let labelsById = {};
+    let distanceLines = [];
+    let distanceTooltips = [];
+    let lastRefId = null;
 
-    // Reverse geocode (short place name)
-    async function reverseGeocode(lat, lon){
-      try{
-        const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}`);
-        const data = await res.json();
-        const a = data.address || {};
-        return a.suburb || a.village || a.town || a.city || a.county || a.state || (data.display_name||'').split(',')[0] || '';
-      }catch{ return ''; }
-    }
+    // ---------------- Map init ----------------
+    function initMap() {
+      if (map) return;
+      map = L.map('liveMap', { zoomControl: true, attributionControl: false })
+        .setView([13.1266, 80.1002], 15);
 
-    async function loadPoints(){
-      try{
-        const {items=[]} = await getJSON('/api/current/');
-        return items.map(it => ({
-          id:  it.device_id || it.person_id,
-          name: it.device_id || it.person || it.label,
-          lat: Number(it.lat),
-          lon: Number(it.lon)
-        })).filter(p => Number.isFinite(p.lat) && Number.isFinite(p.lon));
-      }catch(e){
-        // fallback to mock
-        const mock = await getJSON('/api/mock/people/');
-        return (mock.people||[]).map(p=>{
-          const last=(p.path&&p.path.length)?p.path[p.path.length-1]:null;
-          return { id:String(p.id), name:String(p.id), lat:(last?last.lat:28.6139), lon:(last?last.lon:77.2090) };
-        });
-      }
-    }
-
-    // tile layer with fallback
-    function addTiles(map){
-      const primary = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        maxZoom: 19, attribution: '&copy; OpenStreetMap contributors'
+      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19
       }).addTo(map);
+    }
 
-      primary.on('tileerror', ()=>{
-        try{ map.removeLayer(primary); }catch(e){}
-        L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-          subdomains: 'abcd', maxZoom: 20,
-          attribution: '&copy; OpenStreetMap contributors &copy; CARTO'
-        }).addTo(map);
+    // ---------------- Distance util ----------------
+    function haversineMeters(lat1, lon1, lat2, lon2) {
+      const R = 6371000;
+      const toRad = x => x * Math.PI / 180;
+      const dLat = toRad(lat2 - lat1);
+      const dLon = toRad(lon2 - lon1);
+      const a =
+        Math.sin(dLat/2)**2 +
+        Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+        Math.sin(dLon/2)**2;
+      return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    }
+    function formatDistance(m) {
+      if (!isFinite(m)) return '';
+      return m < 1000 ? `${Math.round(m)} m` : `${(m/1000).toFixed(2)} km`;
+    }
+
+    // ---------------- Clear distances ----------------
+    function clearDistanceHighlights() {
+      distanceLines.forEach(l => map.removeLayer(l));
+      distanceTooltips.forEach(t => map.removeLayer(t));
+      distanceLines = [];
+      distanceTooltips = [];
+      const panel = document.getElementById('distancePanel');
+      panel.style.display = 'none';
+      panel.innerHTML = '';
+    }
+
+    // ---------------- Highlight distances ----------------
+    function highlightDistancesFor(deviceId) {
+      clearDistanceHighlights();
+      const refMarker = markers[deviceId];
+      if (!refMarker) return;
+
+      const refLatLng = refMarker.getLatLng();
+      const refLabel = labelsById[deviceId] || deviceId;
+      const distances = [];
+
+      Object.entries(markers).forEach(([otherId, marker]) => {
+        if (otherId === deviceId) return;
+        const otherLatLng = marker.getLatLng();
+        const dM = haversineMeters(
+          refLatLng.lat, refLatLng.lng,
+          otherLatLng.lat, otherLatLng.lng
+        );
+        distances.push({ otherId, otherLatLng, distM: dM });
       });
+
+      if (!distances.length) return;
+      distances.sort((a,b) => a.distM - b.distM);
+
+      distances.forEach(d => {
+        const line = L.polyline(
+          [refLatLng, d.otherLatLng],
+          { color: '#00e5ff', weight: 2, dashArray: '4 6', opacity: 0.7 }
+        ).addTo(map);
+        distanceLines.push(line);
+
+        const midLat = (refLatLng.lat + d.otherLatLng.lat)/2;
+        const midLng = (refLatLng.lng + d.otherLatLng.lng)/2;
+        const midMarker = L.marker([midLat, midLng], { opacity: 0, interactive: false })
+          .addTo(map)
+          .bindTooltip(formatDistance(d.distM), {
+            permanent: true, direction: 'center', className: 'distance-label'
+          });
+        distanceTooltips.push(midMarker);
+      });
+
+      // panel
+      const panel = document.getElementById('distancePanel');
+      let html = `<b>${refLabel}</b>`;
+      distances.forEach(d => {
+        const lbl = labelsById[d.otherId] || d.otherId;
+        html += `<div class="line">${refLabel} → ${lbl} — ${formatDistance(d.distM)}</div>`;
+      });
+      panel.innerHTML = html;
+      panel.style.display = 'block';
     }
 
-    function pin(lat, lon, labelHtml){
-      const svg = `
-        <svg width="24" height="36" viewBox="0 0 24 36" xmlns="http://www.w3.org/2000/svg">
-          <path d="M12 0C5.9 0 1 4.9 1 11c0 7.1 9.2 23.6 10.1 25.1a1 1 0 0 0 1.8 0C13.8 34.6 23 18.1 23 11 23 4.9 18.1 0 12 0z" fill="#ff3b3b"/>
-          <circle cx="12" cy="11" r="4" fill="#fff"/>
-        </svg>`;
-      const html = `<div style="display:grid;place-items:center;gap:4px">${svg}<div class="pin-label">${labelHtml}</div></div>`;
-      return L.marker([lat, lon], { icon: L.divIcon({ className:'', html, iconSize:[24,36], iconAnchor:[12,36] }) });
-    }
+    // ---------------- Add marker ----------------
+    function addMarker(device) {
+      const id = device.device_id || device.label || "Unknown";
+      let lat = parseFloat(device.lat);
+      let lon = parseFloat(device.lon);
+      const label = device.label || id;
 
-    async function init(){
-      const sub  = document.getElementById('mapSubtitle');
-      const foot = document.getElementById('deviceCount');
+      if (!lat || !lon || isNaN(lat) || isNaN(lon)) {
+        lat = 13.1266 + Math.random()/1000;
+        lon = 80.1002 + Math.random()/1000;
+      }
 
-      const map = L.map('leafletMap', { zoomControl:true, inertia:true, worldCopyJump:false })
-                   .setView([28.6139, 77.2090], 11);
+      const isReceiver = id.startsWith("RX");
+      const iconColor = isReceiver ? "red" : "blue";
+      const icon = L.icon({
+        iconUrl: `https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-${iconColor}.png`,
+        shadowUrl: "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-shadow.png",
+        iconSize: [25, 41],
+        iconAnchor: [12, 41],
+        popupAnchor: [1, -34],
+        shadowSize: [41, 41]
+      });
 
-      addTiles(map);
-
-      const pts = await loadPoints();
-      const group = L.featureGroup().addTo(map);
-
-      for (const p of pts){
-        const m = pin(p.lat, p.lon, p.name)
-          .on('click', ()=>{ if (p.id) window.location.href = '/person/' + encodeURIComponent(p.id) + '/'; })
-          .addTo(group);
-
-        // add small place name tooltip
-        reverseGeocode(p.lat, p.lon).then(place=>{
-          if (place) m.bindTooltip(`${p.name}<br><small>${place}</small>`, {direction:'top'});
+      if (markers[id]) {
+        markers[id].setLatLng([lat, lon]);
+      } else {
+        const m = L.marker([lat, lon], { icon }).addTo(map);
+        m.bindTooltip(label, {
+          permanent: true, direction: 'top', offset: [0,-30], className: 'device-label'
         });
-      }
+        m.bindPopup(
+          `<b>${label}</b><br>Lat: ${lat.toFixed(6)}<br>Lon: ${lon.toFixed(6)}<br>` +
+          `<a href="/person/${id}/" style="color:#00e5ff;">View Details →</a>`
+        );
 
-      if(pts.length){
-        map.fitBounds(group.getBounds().pad(0.2));
-        sub.textContent = `${pts.length} device(s) mapped`;
-        foot.textContent = String(pts.length);
-      }else{
-        sub.textContent = 'no coordinates yet';
-        foot.textContent = '—';
-      }
+        // show while hovering, hide when leaving
+        m.on('mouseover', () => {
+          lastRefId = id;
+          highlightDistancesFor(id);
+        });
+        m.on('mouseout', () => {
+          lastRefId = null;
+          clearDistanceHighlights();
+        });
 
-      setTimeout(()=> map.invalidateSize(), 0);
-      window.addEventListener('resize', ()=> map.invalidateSize());
+        markers[id] = m;
+      }
     }
 
-    window.addEventListener('load', init);
+    // ---------------- Refresh ----------------
+    async function refresh() {
+      try {
+        const res = await fetch(API_URL, { cache: 'no-store' });
+        if (!res.ok) throw new Error(res.status);
+        const data = await res.json();
+        const items = data.items || [];
+
+        lastItems = items;
+        labelsById = {};
+        items.forEach(d => {
+          const id = d.device_id || d.label || "Unknown";
+          labelsById[id] = d.label || id;
+        });
+
+        document.getElementById('liveCount').textContent = `${items.length} device(s) connected`;
+        document.getElementById('mapBadge').textContent = `${items.length} device(s) connected`;
+
+        items.forEach(addMarker);
+
+        const coords = Object.values(markers).map(m => m.getLatLng());
+        if (coords.length > 0) {
+          const bounds = L.latLngBounds(coords);
+          map.fitBounds(bounds.pad(0.3));
+        }
+
+        if (lastRefId && markers[lastRefId]) highlightDistancesFor(lastRefId);
+      } catch (err) {
+        console.error("Error fetching data:", err);
+        document.getElementById('liveCount').textContent = "Error fetching data";
+        document.getElementById('mapBadge').textContent = "Error fetching data";
+        clearDistanceHighlights();
+      }
+    }
+
+    // ---------------- Init ----------------
+    window.addEventListener("load", () => {
+      initMap();
+      refresh();
+      setInterval(refresh, 5000);
+    });
   </script>
 </body>
 </html>
-

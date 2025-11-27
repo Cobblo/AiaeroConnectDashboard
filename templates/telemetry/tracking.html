@@ -1,0 +1,520 @@
+{% load static %}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Tracking – AIAERO CONNECT</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <link href="{% static 'css/dashboard.css' %}" rel="stylesheet">
+  <link rel="stylesheet"
+        href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        crossorigin="">
+  <script defer
+          src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+          crossorigin=""></script>
+
+  <style>
+    :root {
+      --bg-main: #020617;
+      --bg-panel: #020617;
+      --bg-card: #020617;
+      --blue: #2563eb;
+      --blue-soft: rgba(37, 99, 235, 0.12);
+      --accent: #38bdf8;
+      --text-main: #e5e7eb;
+      --text-soft: #9ca3af;
+      --border-subtle: rgba(148, 163, 184, 0.25);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: radial-gradient(circle at top, #020617 0, #020617 40%, #020617 100%);
+      color: var(--text-main);
+      min-height: 100vh;
+    }
+
+    .page {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .top-shell {
+      background: radial-gradient(circle at top left, #020617 0, #020617 35%, #020617 100%);
+      border-bottom: 1px solid rgba(15, 23, 42, 0.95);
+      padding: 14px 24px 8px;
+      box-shadow: 0 16px 40px rgba(0, 0, 0, 0.8);
+      position: sticky;
+      top: 0;
+      z-index: 30;
+    }
+
+    .top-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .brand-wrap {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .brand-logo {
+      width: 40px;
+      height: auto;
+      display: block;
+    }
+
+    .brand-text-main {
+      font-size: 0.98rem;
+      font-weight: 600;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+    }
+
+    .brand-text-sub {
+      font-size: 0.8rem;
+      color: var(--text-soft);
+    }
+
+    .back-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 7px 14px;
+      border-radius: 999px;
+      border: 1px solid var(--border-subtle);
+      background: rgba(15, 23, 42, 0.8);
+      color: var(--text-main);
+      font-size: 0.8rem;
+      text-decoration: none;
+    }
+
+    .back-btn:hover {
+      background: rgba(15, 23, 42, 1);
+    }
+
+    .filters-bar {
+      margin-top: 10px;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 12px;
+      justify-content: center;
+    }
+
+    .filter-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: rgba(15, 23, 42, 0.9);
+      border: 1px solid rgba(30, 64, 175, 0.6);
+    }
+
+    .filter-group label {
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: .12em;
+      color: var(--text-soft);
+    }
+
+    .filter-group select,
+    .filter-group input[type="date"] {
+      border: none;
+      outline: none;
+      background: transparent;
+      color: var(--text-main);
+      font-size: 0.88rem;
+      padding: 4px 6px;
+      min-width: 120px;
+    }
+
+    .filter-group input[type="date"]::-webkit-calendar-picker-indicator {
+      filter: invert(0.8);
+    }
+
+    .btn-pill {
+      border-radius: 999px;
+      border: none;
+      cursor: pointer;
+      font-size: 0.86rem;
+      padding: 8px 18px;
+      font-weight: 500;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: linear-gradient(135deg, #2563eb, #4f46e5);
+      color: white;
+      box-shadow: 0 10px 20px rgba(37, 99, 235, 0.45);
+    }
+
+    .btn-pill.secondary {
+      background: rgba(15, 23, 42, 0.95);
+      color: var(--text-main);
+      border: 1px solid var(--border-subtle);
+      box-shadow: none;
+    }
+
+    .btn-pill:hover {
+      filter: brightness(1.05);
+    }
+
+    .main-wrap {
+      flex: 1;
+      padding: 18px 24px 26px;
+    }
+
+    .map-card {
+      background: radial-gradient(circle at top left, rgba(15, 23, 42, 0.96), #020617 65%);
+      border-radius: 22px;
+      padding: 16px 16px 16px;
+      border: 1px solid rgba(30, 41, 59, 0.9);
+      box-shadow:
+        0 26px 60px rgba(0, 0, 0, 0.95),
+        0 0 0 1px rgba(15, 23, 42, 0.9);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .map-header-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.82rem;
+      color: var(--text-soft);
+    }
+
+    .map-header-row strong {
+      font-size: 0.95rem;
+      color: var(--text-main);
+    }
+
+    #trackMap {
+      margin-top: 6px;
+      height: calc(100vh - 190px);
+      min-height: 420px;
+      border-radius: 18px;
+      overflow: hidden;
+      position: relative;
+      background:
+        repeating-linear-gradient(
+          -45deg,
+          rgba(248, 113, 113, 0.08),
+          rgba(248, 113, 113, 0.08) 8px,
+          rgba(248, 113, 113, 0.02) 8px,
+          rgba(248, 113, 113, 0.02) 16px
+        );
+    }
+
+    .map-status {
+      position: absolute;
+      right: 16px;
+      top: 14px;
+      z-index: 500;
+      background: rgba(15, 23, 42, 0.92);
+      border-radius: 999px;
+      padding: 6px 12px;
+      font-size: 0.78rem;
+      color: var(--text-soft);
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      border: 1px solid rgba(31, 41, 55, 0.95);
+      backdrop-filter: blur(12px);
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 999px;
+      background: #22c55e;
+    }
+
+    @media (max-width: 800px) {
+      .top-row {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 8px;
+      }
+      .filters-bar {
+        justify-content: flex-start;
+      }
+      #trackMap {
+        height: 60vh;
+      }
+    }
+  </style>
+</head>
+<body>
+<div class="page">
+  <header class="top-shell">
+    <div class="top-row">
+      <div class="brand-wrap">
+        <img src="{% static 'img/Aiaero_logo.png' %}" alt="AIAERO CONNECT" class="brand-logo">
+        <div>
+          <div class="brand-text-main">AIAERO CONNECT</div>
+          <div class="brand-text-sub">Daily Movement Tracking</div>
+        </div>
+      </div>
+      <a href="{% url 'dashboard' %}" class="back-btn">← Back</a>
+    </div>
+
+    <form id="trackForm" class="filters-bar" autocomplete="off">
+      <div class="filter-group">
+        <label for="deviceSelect">Select Device</label>
+        <select id="deviceSelect" name="device_id">
+          {% for dev in devices %}
+            <option value="{{ dev.device_id }}"
+              {% if dev.device_id == selected_device_id %}selected{% endif %}>
+              {{ dev.device_id }}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="filter-group">
+        <label for="dateInput">Date</label>
+        <input id="dateInput"
+               type="date"
+               name="date"
+               value="{{ selected_date_input }}">
+      </div>
+
+      <button type="submit" class="btn-pill" id="loadBtn">
+        Load
+      </button>
+
+      <button type="button" class="btn-pill secondary" id="downloadBtn">
+        Download CSV
+      </button>
+    </form>
+  </header>
+
+  <main class="main-wrap">
+    <section class="map-card">
+      <div class="map-header-row">
+        <div>
+          <strong>Track view</strong>
+          <span id="trackMeta"
+                style="margin-left:8px;color:var(--text-soft);">
+            Select device &amp; date, then click <b>Load</b>.
+          </span>
+        </div>
+        <div id="distanceInfo" style="font-size:0.8rem;color:var(--text-soft);">
+          Path distance: <span id="totalKmSpan">0.0</span> km
+          &nbsp;•&nbsp;
+          Start → End: <span id="startEndKmSpan">0.0</span> km
+        </div>
+      </div>
+
+      <div id="trackMap">
+        <div class="map-status" id="mapStatus">
+          <span class="status-dot"></span>
+          <span id="statusText">No track loaded</span>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    const deviceSelect   = document.getElementById("deviceSelect");
+    const dateInput      = document.getElementById("dateInput");
+    const form           = document.getElementById("trackForm");
+    const loadBtn        = document.getElementById("loadBtn");
+    const downloadBtn    = document.getElementById("downloadBtn");
+    const statusText     = document.getElementById("statusText");
+    const trackMeta      = document.getElementById("trackMeta");
+    const totalKmSpan    = document.getElementById("totalKmSpan");
+    const startEndKmSpan = document.getElementById("startEndKmSpan");
+
+    if (!dateInput.value) {
+      const today = new Date();
+      const yyyy = today.getFullYear();
+      const mm = String(today.getMonth() + 1).padStart(2, "0");
+      const dd = String(today.getDate()).padStart(2, "0");
+      dateInput.value = `${yyyy}-${mm}-${dd}`;
+    }
+
+    const map = L.map("trackMap", {
+      zoomControl: true
+    }).setView([20.5937, 78.9629], 5);
+
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19,
+      attribution: "&copy; OpenStreetMap contributors"
+    }).addTo(map);
+
+    const layerGroup = L.layerGroup().addTo(map);
+    let polyline = null;
+
+    function clearTrack() {
+      layerGroup.clearLayers();
+      polyline = null;
+      totalKmSpan.textContent = "0.0";
+      startEndKmSpan.textContent = "0.0";
+    }
+
+    function showError(msg) {
+      console.error(msg);
+      statusText.textContent = "Error loading track";
+      totalKmSpan.textContent = "0.0";
+      startEndKmSpan.textContent = "0.0";
+      alert(msg);
+    }
+
+    function haversineKm(lat1, lon1, lat2, lon2) {
+      const R = 6371.0;
+      const toRad = deg => deg * Math.PI / 180;
+      const phi1 = toRad(lat1);
+      const phi2 = toRad(lat2);
+      const dphi = toRad(lat2 - lat1);
+      const dlambda = toRad(lon2 - lon1);
+
+      const a = Math.sin(dphi / 2) ** 2 +
+                Math.cos(phi1) * Math.cos(phi2) *
+                Math.sin(dlambda / 2) ** 2;
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      return R * c;
+    }
+
+    async function loadTrack(event) {
+      if (event) event.preventDefault();
+
+      const deviceId = deviceSelect.value;
+      const dateVal = dateInput.value;
+
+      if (!deviceId || !dateVal) {
+        alert("Please select both device and date.");
+        return;
+      }
+
+      statusText.textContent = "Loading…";
+      trackMeta.textContent = `Loading track for ${deviceId} on ${dateVal}…`;
+      clearTrack();
+
+      try {
+        const url = `/api/track/${encodeURIComponent(deviceId)}/?date=${encodeURIComponent(dateVal)}`;
+        const resp = await fetch(url);
+        if (!resp.ok) {
+          showError("API error " + resp.status);
+          return;
+        }
+
+        const data = await resp.json();
+        const items = data.items || [];
+
+        if (!items.length) {
+          statusText.textContent = "No data for this day";
+          trackMeta.textContent = `No tracking data for ${deviceId} on ${dateVal}.`;
+          return;
+        }
+
+        const latlngs = [];
+        let totalKm = 0;
+        let prevLat = null, prevLon = null;
+        let firstLat = null, firstLon = null;
+        let lastLat = null, lastLon = null;
+
+        items.forEach((p, idx) => {
+          const lat = p.lat;
+          const lon = p.lon;
+          if (lat == null || lon == null) return;
+
+          const ll = [lat, lon];
+          latlngs.push(ll);
+
+          if (firstLat === null) {
+            firstLat = lat;
+            firstLon = lon;
+          }
+          lastLat = lat;
+          lastLon = lon;
+
+          L.circleMarker(ll, {
+            radius: 3.5,
+            weight: 1,
+            opacity: 0.85,
+            fillOpacity: 0.9
+          }).addTo(layerGroup);
+
+          if (prevLat !== null && prevLon !== null) {
+            totalKm += haversineKm(prevLat, prevLon, lat, lon);
+          }
+          prevLat = lat;
+          prevLon = lon;
+
+          if (idx === 0) {
+            L.marker(ll).addTo(layerGroup).bindPopup("Start");
+          } else if (idx === items.length - 1) {
+            L.marker(ll).addTo(layerGroup).bindPopup("End");
+          }
+        });
+
+        if (!latlngs.length) {
+          statusText.textContent = "No GPS points";
+          trackMeta.textContent = `No valid lat/lon for ${deviceId} on ${dateVal}.`;
+          totalKmSpan.textContent = "0.0";
+          startEndKmSpan.textContent = "0.0";
+          return;
+        }
+
+        polyline = L.polyline(latlngs, {
+          weight: 3,
+          opacity: 0.9,
+          dashArray: "6 8"
+        }).addTo(layerGroup);
+
+        map.fitBounds(polyline.getBounds(), {padding: [32, 32]});
+
+        const pointsCount = latlngs.length;
+        statusText.textContent = `Track loaded: ${pointsCount} point(s)`;
+        trackMeta.textContent = `${deviceId} · ${dateVal} · ${pointsCount} point(s)`;
+
+        totalKmSpan.textContent = totalKm.toFixed(2);
+
+        let startEndKm = 0;
+        if (firstLat !== null && lastLat !== null) {
+          startEndKm = haversineKm(firstLat, firstLon, lastLat, lastLon);
+        }
+        startEndKmSpan.textContent = startEndKm.toFixed(2);
+
+      } catch (err) {
+        showError(err.message || err);
+      }
+    }
+
+    form.addEventListener("submit", loadTrack);
+    loadBtn.addEventListener("click", loadTrack);
+
+    downloadBtn.addEventListener("click", function () {
+      const deviceId = deviceSelect.value;
+      const dateVal = dateInput.value;
+      if (!deviceId || !dateVal) {
+        alert("Select device & date first.");
+        return;
+      }
+      const url = `/api/tracking/download/?device_id=${encodeURIComponent(deviceId)}&date=${encodeURIComponent(dateVal)}`;
+      window.location.href = url;
+    });
+
+    if (deviceSelect.value && dateInput.value) {
+      loadTrack();
+    }
+  });
+</script>
+</body>
+</html>
