@@ -1,87 +1,140 @@
-:root{
-  --bg:#0b1220;
-  --panel:#0f1a2b;
-  --panel-2:#0c1524;
-  --line:#1e2b3d;
-  --text:#eaf2ff;
-  --muted:#a9bfd9;
-  --shadow:0 12px 30px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.03);
-  --radius:16px;
+:root {
+  --bg: #0b1220;
+  --panel: #0f1a2b;
+  --panel-2: #0c1524;
+  --line: #1e2b3d;
+  --text: #eaf2ff;
+  --muted: #a9bfd9;
+  --shadow: 0 12px 30px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.03);
+  --radius: 16px;
 }
 
-*{box-sizing:border-box}
-html,body{height:100%}
-body.bg{background:var(--bg); color:var(--text); margin:0; font-family:system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
+/* GLOBAL */
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body.bg {
+  background: var(--bg);
+  color: var(--text);
+  margin: 0;
+  font-family: system-ui, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+}
 
-.bg-gradient{
-  position:fixed; inset:0; pointer-events:none;
+/* Decorative background glow */
+.bg-gradient {
+  position: fixed; inset: 0; pointer-events: none;
   background:
     radial-gradient(60% 80% at 20% 20%, rgba(77,184,255,.12), transparent 60%),
     radial-gradient(60% 80% at 80% 80%, rgba(130,209,255,.10), transparent 60%);
+  z-index: 0;
 }
 
-/* Header */
-.app-header{
-  display:flex; align-items:center; justify-content:space-between;
-  padding:14px 18px; border-bottom:1px solid var(--line);
-  background:linear-gradient(180deg,var(--panel)0%,var(--panel-2)100%);
-  position:sticky; top:0; z-index:10;
+/* HEADER */
+.app-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--line);
+  background: linear-gradient(180deg, var(--panel) 0%, var(--panel-2) 100%);
+  position: sticky; top: 0; z-index: 10;
 }
-.brand-row{display:flex; align-items:center; gap:10px}
-.brand-logo{width:36px; height:36px; object-fit:contain; border-radius:8px}
-.brand-title{margin:0; line-height:1}
-.brand-sub{color:var(--muted); font-size:12px; margin-top:2px}
+.brand-row { display: flex; align-items: center; gap: 10px; }
+.brand-logo { width: 36px; height: 36px; object-fit: contain; border-radius: 8px; }
+.brand-title { margin: 0; line-height: 1; }
+.brand-sub { color: var(--muted); font-size: 12px; margin-top: 2px; }
 
-.profile{position:relative}
-.profile-btn{
-  display:flex; align-items:center; gap:10px; padding:8px 10px;
-  border:1px solid var(--line); border-radius:12px; background:#12263f; color:#d6e8ff;
+.profile { position: relative; }
+.profile-btn {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #12263f;
+  color: #d6e8ff;
+  cursor: pointer;
 }
-.avatar-sm{width:28px; height:28px; border-radius:50%; background:#11243a; display:grid; place-items:center}
-.menu{
-  position:absolute; right:0; top:46px; background:var(--panel); border:1px solid var(--line);
-  border-radius:12px; min-width:180px; box-shadow:var(--shadow); display:none; overflow:hidden;
+.avatar-sm {
+  width: 28px; height: 28px; border-radius: 50%;
+  background: #11243a;
+  display: grid; place-items: center;
 }
-.menu a{display:block; padding:10px 12px; text-decoration:none; color:var(--text)}
-.menu a:hover{background:#12263f}
+.menu {
+  position: absolute; right: 0; top: 46px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  min-width: 180px;
+  box-shadow: var(--shadow);
+  display: none;
+  overflow: hidden;
+  z-index: 20;
+}
+.menu a {
+  display: block;
+  padding: 10px 12px;
+  text-decoration: none;
+  color: var(--text);
+}
+.menu a:hover { background: #12263f; }
 
-/* Layout */
-.wrap{padding:18px}
-.card{
-  background:linear-gradient(180deg,var(--panel)0%,var(--panel-2)100%);
-  border:1px solid var(--line); border-radius:var(--radius); box-shadow:var(--shadow);
-  padding:14px;
+/* LAYOUT */
+.wrap { padding: 18px; position: relative; z-index: 1; }
+.card {
+  background: linear-gradient(180deg, var(--panel) 0%, var(--panel-2) 100%);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 14px;
 }
 
-/* Card header with visible subtitle on right */
-.card-head{
-  display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;
+/* CARD HEADER */
+.card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
 }
-.card-title{margin:0; font-size:20px}
-.card-sub{color:var(--muted);}
+.card-title { margin: 0; font-size: 20px; }
+.card-sub { color: var(--muted); }
 
-/* Stable map */
-#leafletMap{
-  width:100%;
+/* LEAFLET MAP (Always Visible) */
+#leafletMap {
+  width: 100%;
   height: clamp(480px, 70vh, 820px);
-  border:1px solid var(--line);
-  border-radius:var(--radius);
-  overflow:hidden;
-  background:#0b1220;       /* while tiles load */
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: #0b1220; /* visible even when no devices online */
+  position: relative;
 }
 
-/* Card footer */
-.card-foot{margin-top:10px; color:var(--muted); font-size:14px}
+/* Hide Leaflet attribution and logo for cleaner look */
+.leaflet-control-attribution,
+.leaflet-control-container .leaflet-control-attribution,
+.leaflet-control-container .leaflet-control-logo {
+  display: none !important;
+}
 
-/* Pin label style used by the custom marker */
-.pin-label{
-  background:rgba(0,0,0,.35);
-  color:var(--text);
-  border:1px solid var(--line);
-  border-radius:999px;
-  padding:2px 8px;
-  font-size:11px;
-  white-space:nowrap;
-  box-shadow:0 1px 0 rgba(255,255,255,.05) inset;
-  backdrop-filter:saturate(120%) blur(2px);
+/* Hide Leaflet watermark (secure: still uses legal open data) */
+.leaflet-control-container a[href*="leaflet"],
+.leaflet-container a[href*="leafletjs"] {
+  display: none !important;
+}
+
+/* CARD FOOTER */
+.card-foot {
+  margin-top: 10px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+/* PIN LABEL STYLE (custom marker tooltip look) */
+.pin-label {
+  background: rgba(0, 0, 0, .35);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 11px;
+  white-space: nowrap;
+  box-shadow: 0 1px 0 rgba(255,255,255,.05) inset;
+  backdrop-filter: saturate(120%) blur(2px);
 }

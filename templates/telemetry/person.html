@@ -5,11 +5,46 @@
   <meta charset="utf-8">
   <title>Device {{ pid }}</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link href="{% static 'css/dashboard.css' %}" rel="stylesheet">
 
+  <link href="{% static 'css/dashboard.css' %}" rel="stylesheet">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
   <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+
+  <style>
+    #miniMap {
+      height: 320px;
+      border-radius: 12px;
+      overflow: hidden;
+    }
+
+    .device-chooser {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      margin: 8px 0 0;
+    }
+
+    select.small {
+      padding: 6px 10px;
+      border-radius: 8px;
+      border: 1px solid #ccc;
+    }
+
+    .leaflet-control-attribution { display: none !important; }
+
+    /* Tooltip styling for place name */
+    .leaflet-tooltip.place-label {
+      background: rgba(0,0,0,.65);
+      color: #fff;
+      border: none;
+      border-radius: 999px;
+      padding: 2px 8px;
+      font-size: 11px;
+      box-shadow: 0 1px 4px rgba(0,0,0,.3);
+    }
+  </style>
 </head>
+
 <body class="bg">
   <div class="bg-gradient"></div>
 
@@ -29,26 +64,29 @@
   <main class="wrap">
     <section class="card">
       <div class="card-head">
-        <h3 class="card-title">Device: <code id="devId">{{ pid }}</code></h3>
+        <h3 class="card-title">
+          Device: <code id="devId">—</code>
+          <small id="devLabel" style="margin-left:.5rem;opacity:.8"></small>
+        </h3>
         <small class="card-sub" id="status">loading…</small>
+
+        <div class="device-chooser">
+          <label for="devSelect">Switch device:</label>
+          <select id="devSelect" class="small"></select>
+        </div>
       </div>
 
       <div class="grid-2">
         <div>
           <table class="kv">
-            <tbody>
-              <tr><th>Timestamp</th><td id="ts">—</td></tr>
-              <tr><th>Heart rate</th><td id="hr">—</td></tr>
-              <tr><th>SpO₂</th><td id="spo2">—</td></tr>
-              <tr><th>BP (sys/dia)</th><td><span id="bp_sys">—</span>/<span id="bp_dia">—</span></td></tr>
-              <tr><th>Temperature</th><td id="temp">—</td></tr>
-              <tr><th>Latitude</th><td id="lat">—</td></tr>
-              <tr><th>Longitude</th><td id="lon">—</td></tr>
+            <tbody id="deviceTableBody">
+              <!-- Filled dynamically -->
             </tbody>
           </table>
         </div>
+
         <div>
-          <div id="miniMap" style="height:320px;border-radius:12px;overflow:hidden"></div>
+          <div id="miniMap"></div>
         </div>
       </div>
     </section>
@@ -57,75 +95,165 @@
   {{ pid|json_script:"pid_json" }}
 
   <script>
-    const deviceId = JSON.parse(document.getElementById('pid_json').textContent);
-    async function getJSON(url){ const r = await fetch(url); if(!r.ok) throw new Error(r.status); return r.json(); }
-    function setText(id, v){ const el = document.getElementById(id); if (el) el.textContent = (v ?? '—'); }
+    const ACTIVE_MINUTES = 2; 
 
-    async function reverseGeocode(lat, lon){
-      try{
+    const API_URL = `/api/current/recent/?active_minutes=${ACTIVE_MINUTES}`;
+    const fromCtx = JSON.parse(document.getElementById('pid_json').textContent || 'null');
+    const q = new URLSearchParams(location.search);
+    const deviceFromQuery = q.get('device') || q.get('id') || '';
+    let selectedId = (deviceFromQuery || fromCtx || '').trim();
+
+    async function getJSON(url) {
+      const r = await fetch(url, { cache: 'no-store' });
+      if (!r.ok) throw new Error(r.status);
+      return r.json();
+    }
+
+    function isoToDate(s) {
+      try { return new Date(s); } catch { return new Date(0); }
+    }
+    function minutesAgo(d) { return (Date.now() - +d) / 60000; }
+
+    async function reverseGeocode(lat, lon) {
+      try {
         const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}`);
         const data = await res.json();
         const a = data.address || {};
-        return a.suburb || a.village || a.town || a.city || a.county || a.state || (data.display_name||'').split(',')[0] || '';
-      }catch{ return ''; }
+        return a.suburb || a.village || a.town || a.city || a.state || '';
+      } catch { return ""; }
     }
 
-    function addTiles(map){
-      const primary = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        maxZoom: 19, attribution: '&copy; OpenStreetMap contributors'
-      }).addTo(map);
-
-      primary.on('tileerror', ()=>{
-        try{ map.removeLayer(primary); }catch(e){}
+    function addTiles(map) {
+      const base = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
+      base.on('tileerror', () => {
+        try { map.removeLayer(base); } catch {}
         L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-          subdomains:'abcd', maxZoom:20,
-          attribution:'&copy; OpenStreetMap contributors &copy; CARTO'
+          subdomains: 'abcd', maxZoom: 20
         }).addTo(map);
       });
     }
 
-    async function renderMap(lat, lon){
-      const map = L.map('miniMap').setView([lat, lon], 15);
-      addTiles(map);
-      const m = L.marker([lat, lon]).addTo(map);
+    let theMap, theMarker;
 
-      // show place text near marker
-      const place = await reverseGeocode(lat, lon);
-      if (place) m.bindTooltip(place, {direction:'top'}).openTooltip();
+    function ensureMap(lat, lon, isReceiver) {
+      if (!theMap) {
+        theMap = L.map('miniMap', { attributionControl: false, zoomControl: true })
+                    .setView([lat, lon], 15);
+        addTiles(theMap);
+      }
 
-      setTimeout(()=> map.invalidateSize(), 50);
+      const iconColor = isReceiver ? "red" : "blue";
+      const icon = L.icon({
+        iconUrl: `https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-${iconColor}.png`,
+        shadowUrl: "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-shadow.png",
+        iconSize: [25,41], iconAnchor: [12,41], popupAnchor: [1,-34], shadowSize:[41,41]
+      });
+
+      if (!theMarker) {
+        theMarker = L.marker([lat, lon], { icon }).addTo(theMap);
+      } else {
+        theMarker.setLatLng([lat, lon]);
+        theMarker.setIcon(icon);
+      }
+
+      setTimeout(() => theMap.invalidateSize(), 60);
     }
 
-    async function loadLatest(){
-      const q = new URLSearchParams({ device_id: deviceId, limit: '1' });
-      const data = await getJSON('/api/current/?' + q.toString());
+    function fillDeviceSelect(items) {
+      const sel = document.getElementById('devSelect');
+      sel.innerHTML = '';
+      for (const it of items) {
+        const opt = document.createElement('option');
+        opt.value = it.device_id;
+        opt.textContent = it.label?.trim() || it.device_id;
+        if (it.device_id === selectedId) opt.selected = true;
+        sel.appendChild(opt);
+      }
+      sel.onchange = () => { selectedId = sel.value; renderFor(selectedId, items); };
+    }
 
-      const item = (data.items || [])[0];
-      if (!item){
-        document.getElementById('status').textContent = 'no data yet';
+    function newest(items) {
+      return [...items].sort((a, b) => new Date(b.ts) - new Date(a.ts))[0];
+    }
+
+    function renderFor(id, items) {
+      const item = id ? items.find(v => v.device_id == id) : newest(items);
+      if (!item) {
+        document.getElementById('status').textContent = 'no devices online';
         return;
       }
 
-      setText('ts', item.ts);
-      setText('hr', item.hr);
-      setText('spo2', item.spo2);
-      setText('bp_sys', item.bp_sys);
-      setText('bp_dia', item.bp_dia);
-      setText('temp', item.temp);
-      setText('lat', item.lat);
-      setText('lon', item.lon);
-      document.getElementById('status').textContent = 'latest reading';
+      selectedId = item.device_id;
+      const tbody = document.getElementById("deviceTableBody");
+      tbody.innerHTML = "";
+
+      document.getElementById('status').textContent = `latest reading (≤ ${ACTIVE_MINUTES} min)`;
+      document.getElementById('devId').textContent = item.device_id;
+      document.getElementById('devLabel').textContent = item.label ? `(${item.label})` : '';
+
+      const isReceiver = item.device_id.startsWith("RX");
+
+      const rows = [];
+      rows.push(`<tr><th>Timestamp</th><td>${item.ts || '—'}</td></tr>`);
+
+      if (isReceiver) {
+        rows.push(`<tr><th>Latitude</th><td>${item.lat ?? '—'}</td></tr>`);
+        rows.push(`<tr><th>Longitude</th><td>${item.lon ?? '—'}</td></tr>`);
+        rows.push(`<tr><th>Mode</th><td>Receiver (GPS only)</td></tr>`);
+      } else {
+        rows.push(`<tr><th>Heart rate</th><td>${item.hr ?? '—'}</td></tr>`);
+        rows.push(`<tr><th>SpO₂</th><td>${item.spo2 ?? '—'}</td></tr>`);
+        rows.push(`<tr><th>Temperature</th><td>${item.temp ?? item.temp_c ?? '—'}</td></tr>`);
+        rows.push(`<tr><th>BP (sys)</th><td>${item.bp_sys ?? '—'}</td></tr>`);
+        rows.push(`<tr><th>BP (dia)</th><td>${item.bp_dia ?? '—'}</td></tr>`);
+        rows.push(`<tr><th>Latitude</th><td>${item.lat ?? '—'}</td></tr>`);
+        rows.push(`<tr><th>Longitude</th><td>${item.lon ?? '—'}</td></tr>`);
+      }
+
+      tbody.innerHTML = rows.join("");
 
       const lat = Number(item.lat), lon = Number(item.lon);
-      if (Number.isFinite(lat) && Number.isFinite(lon)){
-        renderMap(lat, lon);
+      if (Number.isFinite(lat) && Number.isFinite(lon)) {
+        ensureMap(lat, lon, isReceiver);
+        // --- Tooltip above marker ---
+        reverseGeocode(lat, lon).then(place => {
+          if (place) {
+            theMarker.unbindTooltip();
+            theMarker.bindTooltip(place, {
+              direction: 'top',
+              offset: [0, -24],     // push label above the pin
+              className: 'place-label',
+              permanent: true
+            }).openTooltip();
+          }
+        });
       }
     }
 
-    loadLatest().catch(e=>{
-      document.getElementById('status').textContent = 'error loading data';
-      console.error(e);
-    });
+    async function init() {
+      try {
+        const data = await getJSON(API_URL);
+        const items = (data.items || []).filter(it =>
+          Number.isFinite(Number(it.lat)) &&
+          Number.isFinite(Number(it.lon)) &&
+          minutesAgo(isoToDate(it.ts)) <= ACTIVE_MINUTES
+        );
+        if (!items.length) {
+          document.getElementById('status').textContent = 'no devices online';
+          fillDeviceSelect([]);
+          return;
+        }
+        if (!selectedId || selectedId === "AUTO") selectedId = newest(items)?.device_id;
+        fillDeviceSelect(items);
+        renderFor(selectedId, items);
+      } catch (err) {
+        console.error(err);
+        document.getElementById('status').textContent = 'error loading data';
+      }
+    }
+
+    window.addEventListener('load', init);
+    setInterval(init, 12000);
   </script>
 </body>
 </html>

@@ -1,0 +1,34 @@
+Steps to work with this project on Windows PowerShell:
+
+1. Activate the virtual environment  
+   ```
+   .\venv\Scripts\Activate.ps1
+   ```
+
+2. Capture currently installed packages into `dependencies.txt`  
+   ```
+   Get-ChildItem .\venv\Lib\site-packages\*.dist-info |
+     Select-Object -ExpandProperty Name |
+     ForEach-Object {
+       ($_ -replace '.dist-info','') -replace '_','-'
+     } |
+     ForEach-Object {
+       $_.Split('-')[0] + '==' + ($_.Split('-')[1])
+     } |
+     Set-Content dependencies.txt
+   ```
+   (Alternatively, run `pip freeze > dependencies.txt` if the base
+   Python interpreter is installed and accessible.)
+
+3. Install dependencies on any machine with the same Python version  
+   ```
+   .\venv\Scripts\python.exe -m pip install -r dependencies.txt
+   ```
+   If `.\venv\Scripts\python.exe` fails because the original base Python
+   path is missing, install Python (matching the version recorded in
+   `venv\pyvenv.cfg`) and recreate the venv:
+   ```
+   python -m venv venv
+   .\venv\Scripts\Activate.ps1
+   pip install -r dependencies.txt
+   ```

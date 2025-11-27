@@ -5,35 +5,260 @@
   <meta charset="utf-8">
   <title>Sign up • AIAERO CONNECT</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
+
   <link href="{% static 'css/dashboard.css' %}" rel="stylesheet">
+
   <style>
-    .auth-wrap{min-height:100vh;display:grid;place-items:center;background:var(--bg)}
-    .auth-card{width:min(420px,92vw);background:linear-gradient(180deg,var(--panel),var(--panel-2));
-      border:1px solid var(--line);border-radius:16px;padding:20px;box-shadow:var(--shadow);color:var(--text)}
-    .auth-card h1{margin:0 0 12px}
-    .row{display:grid;gap:8px;margin:10px 0}
-    input{width:100%;padding:10px;border-radius:10px;border:1px solid var(--line);background:#0f2036;color:var(--text)}
-    button{width:100%;padding:10px;border-radius:10px;border:1px solid var(--line);background:#12263f;color:#d6e8ff;cursor:pointer}
-    a{color:#9ed0ff}
+    :root {
+      --bg: #020617;
+      --card-shadow: 0 26px 60px rgba(0, 0, 0, 0.65);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+        sans-serif;
+      background: radial-gradient(circle at top left, #0f172a, #020617 55%);
+      color: #0f172a;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 20px;
+    }
+
+    .auth-shell {
+      width: min(980px, 100%);
+    }
+
+    .auth-card {
+      display: flex;
+      flex-direction: column;
+      background: transparent;
+      border-radius: 26px;
+      overflow: hidden;
+      box-shadow: var(--card-shadow);
+    }
+
+    @media (min-width: 768px) {
+      .auth-card {
+        flex-direction: row;
+      }
+    }
+
+    /* LEFT PANEL – image card like Astro example */
+    .auth-visual {
+      flex: 1 1 50%;
+      padding: 32px 26px;
+      background: linear-gradient(180deg, #111827, #020617);
+      color: #f9fafb;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+
+    .auth-visual-inner {
+      width: 100%;
+      max-width: 280px;
+    }
+
+    .art-card {
+      width: 100%;
+      aspect-ratio: 3 / 4;            /* tall card like the Pinterest one */
+      border-radius: 26px;
+      overflow: hidden;
+      box-shadow: 0 24px 45px rgba(0, 0, 0, 0.6);
+      margin-bottom: 18px;
+      background: radial-gradient(circle at top left, #1f2937, #020617);
+    }
+
+    .art-card img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+
+    .auth-visual h2 {
+      margin: 0 0 6px;
+      font-size: 1.5rem;
+      line-height: 1.25;
+    }
+
+    .auth-visual p {
+      margin: 0;
+      font-size: 0.9rem;
+      color: #e5e7eb;
+    }
+
+    /* RIGHT PANEL – form */
+    .auth-form {
+      flex: 1 1 50%;
+      background: #ffffff;
+      padding: 30px 30px 24px;
+    }
+
+    .auth-form h1 {
+      margin: 0 0 16px;
+      font-size: 1.6rem;
+      color: #111827;
+    }
+
+    .row {
+      display: grid;
+      gap: 6px;
+      margin-bottom: 12px;
+    }
+
+    label {
+      font-size: 0.85rem;
+      color: #4b5563;
+    }
+
+    input[type="text"],
+    input[type="email"],
+    input[type="password"] {
+      width: 100%;
+      padding: 9px 10px;
+      border-radius: 8px;
+      border: 1px solid #e5e7eb;
+      font-size: 0.93rem;
+      outline: none;
+      background: #f9fafb;
+    }
+
+    input:focus {
+      border-color: #2563eb;
+      box-shadow: 0 0 0 1px rgba(37, 99, 235, 0.35);
+      background: #ffffff;
+    }
+
+    .error-msg {
+      color: #b91c1c;
+      font-size: 0.85rem;
+      margin-bottom: 8px;
+    }
+
+    .success-msg {
+      color: #15803d;
+      font-size: 0.85rem;
+      margin-bottom: 8px;
+    }
+
+    .actions {
+      margin-top: 6px;
+      display: grid;
+      gap: 10px;
+    }
+
+    button[type="submit"] {
+      width: 100%;
+      padding: 10px;
+      border-radius: 8px;
+      border: none;
+      background: #020617;
+      color: #f9fafb;
+      font-weight: 600;
+      font-size: 0.95rem;
+      cursor: pointer;
+    }
+
+    button[type="submit"]:hover {
+      filter: brightness(1.05);
+    }
+
+    .helper {
+      font-size: 0.85rem;
+      color: #6b7280;
+      text-align: center;
+    }
+
+    .helper a {
+      color: #111827;
+      text-decoration: none;
+      font-weight: 600;
+    }
+
+    .helper a:hover {
+      text-decoration: underline;
+    }
+
+    @media (max-width: 767px) {
+      .auth-visual {
+        min-height: 220px;
+      }
+      .auth-form {
+        padding: 24px 20px 20px;
+      }
+    }
   </style>
 </head>
-<body class="bg">
-  <div class="auth-wrap">
-    <form class="auth-card" method="post">
-      {% csrf_token %}
-      <h1>Create account</h1>
-      {% if error %}<p style="color:#ff7a7a">{{ error }}</p>{% endif %}
-      <div class="row">
-        <label>Username</label>
-        <input type="text" name="username" required>
+<body>
+  <div class="auth-shell">
+    <div class="auth-card">
+
+      <!-- LEFT: image card + small copy -->
+      <div class="auth-visual">
+        <div class="auth-visual-inner">
+          <div class="art-card">
+            <!-- replace this file with your own soldier illustration -->
+            <img src="{% static 'img/solimg.png' %}" alt="Soldier illustration">
+          </div>
+          <h2>Exploring new<br>frontiers in defence.</h2>
+          <p>Track every soldier’s vitals and movement securely with AIAERO CONNECT.</p>
+        </div>
       </div>
-      <div class="row">
-        <label>Password</label>
-        <input type="password" name="password" required>
-      </div>
-      <button type="submit">Sign up</button>
-      <p style="margin-top:10px">Already have an account? <a href="{% url 'login' %}">Login</a></p>
-    </form>
+
+      <!-- RIGHT: SIGNUP FORM -->
+      <form class="auth-form" method="post">
+        {% csrf_token %}
+        <h1>Sign up</h1>
+
+        {% if error %}
+          <p class="error-msg">{{ error }}</p>
+        {% endif %}
+
+        {% if messages %}
+          {% for message in messages %}
+            <p class="{% if message.tags %}{{ message.tags }}-msg{% endif %}">
+              {{ message }}
+            </p>
+          {% endfor %}
+        {% endif %}
+
+        <div class="row">
+          <label for="id_username">Username</label>
+          <input id="id_username" type="text" name="username" required>
+        </div>
+
+        <div class="row">
+          <label for="id_email">Email address</label>
+          <input id="id_email" type="email" name="email" required>
+        </div>
+
+        <div class="row">
+          <label for="id_password">Password</label>
+          <input id="id_password" type="password" name="password" required>
+        </div>
+
+        <div class="row">
+          <label for="id_confirm_password">Confirm password</label>
+          <input id="id_confirm_password" type="password"
+                 name="confirm_password" required>
+        </div>
+
+        <div class="actions">
+          <button type="submit">Create account</button>
+          <p class="helper">
+            Already have an account?
+            <a href="{% url 'login' %}">Login</a>
+          </p>
+        </div>
+      </form>
+    </div>
   </div>
 </body>
 </html>
