@@ -34,6 +34,16 @@ from django.views.decorators.http import require_GET, require_http_methods
 
 from .models import Device, Reading
 
+from .models import Device, Reading
+from .duckdb_utils import get_duckdb_conn
+
+from django.shortcuts import render, redirect
+from django.contrib.auth.decorators import login_required
+from django.contrib.auth import authenticate, login, logout   # ← ADD logout here
+from django.views.decorators.http import require_GET
+
+
+
 log = logging.getLogger(__name__)
 
 # ----------------------------- AUTH -----------------------------
@@ -69,7 +79,6 @@ def home(request):
         return redirect("dashboard")
     return redirect("login")
 
-
 @login_required
 def dashboard(request):
     return render(request, "telemetry/dashboard.html")
@@ -86,6 +95,17 @@ def person_auto(request):
     return render(request, "telemetry/person.html", {"pid": "AUTO"})
 
 
+# ---- LOGOUT VIEW (add this block) ----
+def logout_view(request):
+    """
+    Log the user out and send them to the login page.
+    Works with a simple GET request from the 'Logout' link.
+    """
+    logout(request)
+    return redirect('login')   # 'login' must be the URL name of your login view
+# -------------------------------------
+
+
 # -------------------------- DOWNLOADS --------------------------
 
 
@@ -99,6 +119,7 @@ def download_latest_workbook(request):
         raise Http404("No workbook found in EXCEL_DIR.")
     latest = xlsxs[-1]
     return FileResponse(open(latest, "rb"), as_attachment=True, filename=latest.name)
+
 
 
 # ---------------------------- MOCK -----------------------------
@@ -828,71 +849,126 @@ def password_change_request(request):
 # ---------------------- DAILY TRACK HISTORY (LEGACY SIMPLE) ----------------------
 
 
+# ---------------------- DAILY TRACK HISTORY (USING DUCKDB) ----------------------
+
+# ---------------------- DAILY TRACK HISTORY (LOCAL DUCKDB: LoRa + GSM) ----------------------
+
+
 @login_required
 @require_GET
 def api_track_history(request, device_id: str):
     """
-    Legacy: Returns all GPS points of a device for a particular date
-    using the HTTP API (VITALS_API_URL).
-    URL: /api/track/<device_id>?date=YYYY-MM-DD
+    Returns all GPS points of a device for a particular date
+    using the local DuckDB file.
+
+    Tables used:
+      - aiaero_4444_secure_key  (LoRa history)
+      - vitals_readings         (GSM history)
+
+    URL: /api/track/<device_id>/?date=YYYY-MM-DD
     """
-    base_url = (getattr(settings, "VITALS_API_URL", "") or "").strip()
-    secret = (getattr(settings, "VITALS_API_SECRET", "") or "").strip()
-    timeout = int(getattr(settings, "VITALS_API_TIMEOUT", 10))
 
-    if not base_url:
-        return JsonResponse({"items": [], "note": "VITALS_API_URL not configured"})
-
-    date_str = request.GET.get("date")
+    # ---- Parse date from query ----
+    date_str = (request.GET.get("date") or "").strip()
     if not date_str:
         return JsonResponse({"error": "date=YYYY-MM-DD required"}, status=400)
 
-    headers = {"x-ingest-secret": secret} if secret else {}
-    # use a SAFE limit that Lambda accepts
-    params = {"device_id": device_id, "limit": "1000"}
+    target_date: date | None = None
+    for fmt in ("%Y-%m-%d", "%d-%m-%Y"):
+        try:
+            target_date = datetime.strptime(date_str, fmt).date()
+            break
+        except ValueError:
+            continue
+
+    if target_date is None:
+        return JsonResponse({"error": "invalid date format"}, status=400)
+
+    # ---- Collect rows from both history tables ----
+    collected: list[dict] = []
+    history_tables = [
+        "aiaero_4444_secure_key",  # LoRa history
+        "vitals_readings",         # GSM history
+    ]
 
     try:
-        r = requests.get(base_url, params=params, headers=headers, timeout=timeout)
-        if not r.ok:
-            return JsonResponse(
-                {
-                    "items": [],
-                    "note": f"upstream status {r.status_code}: {(r.text or '')[:120]}",
-                }
-            )
-        raw = r.json().get("items") or []
+        with get_duckdb_conn() as con:
+            for tbl in history_tables:
+                try:
+                    # some tables may not exist yet -> just skip if so
+                    cur = con.execute(
+                        f"SELECT * FROM {tbl} WHERE device_id = ?",
+                        [device_id],
+                    )
+                except Exception:
+                    log.exception("api_track_history: DuckDB table %s not available", tbl)
+                    continue
+
+                cols = [c[0] for c in cur.description]
+                raw_rows = cur.fetchall()
+
+                for raw in raw_rows:
+                    rec = dict(zip(cols, raw))
+
+                    # pick any timestamp field we can find
+                    ts_val = (
+                        rec.get("ts_iso")
+                        or rec.get("timestamp")
+                        or rec.get("ts")
+                        or rec.get("ts_epoch")
+                    )
+                    ts = _sanitize_ts(_parse_ts_any(ts_val))
+                    if not ts or ts.date() != target_date:
+                        continue
+
+                    # lat / lon can have multiple possible names
+                    lat = _to_float(_pick(rec, "lat", "last_lat", "latitude", "Latitude"))
+                    lon = _to_float(_pick(rec, "lon", "last_lon", "longitude", "Longitude"))
+                    if lat is None or lon is None:
+                        gps = rec.get("gps") or {}
+                        lat = _to_float(_pick(gps, "lat", "latitude", "Latitude"))
+                        lon = _to_float(_pick(gps, "lon", "longitude", "Longitude"))
+                    if lat is None or lon is None:
+                        continue
+
+                    # 🔴 IMPORTANT: skip fake GPS points at (0,0)
+                    if abs(lat) < 0.0001 and abs(lon) < 0.0001:
+                        continue
+
+                    collected.append(
+                        {
+                            "ts": ts,
+                            "lat": lat,
+                            "lon": lon,
+                            "hr": rec.get("hr"),
+                            "spo2": rec.get("spo2"),
+                            "temp": rec.get("temp_c") or rec.get("temp"),
+                        }
+                    )
     except Exception:
-        log.exception("api_track_history upstream error")
+        log.exception("api_track_history: DuckDB query failed")
         return JsonResponse({"items": []})
 
+    # ---- Sort by time and build JSON payload ----
+    collected.sort(key=lambda r: r["ts"])
+
     out = []
-    for it in raw:
-        ts = _parse_ts_any(it.get("timestamp") or it.get("ts"))
-        if not ts:
-            continue
-        if str(ts.date()) != date_str:
-            continue
-
-        lat = _to_float(it.get("lat"))
-        lon = _to_float(it.get("lon"))
-        if lat is None or lon is None:
-            continue
-
+    for r in collected:
         out.append(
             {
-                "ts": ts.isoformat(),
-                "lat": lat,
-                "lon": lon,
-                "hr": it.get("hr"),
-                "spo2": it.get("spo2"),
-                "temp": it.get("temp") or it.get("temp_c"),
+                "ts": r["ts"].isoformat(),
+                "lat": r["lat"],
+                "lon": r["lon"],
+                "hr": r["hr"],
+                "spo2": r["spo2"],
+                "temp": r["temp"],
             }
         )
 
     return JsonResponse({"items": out})
 
 
-# ---------------------- DAILY TRACK – MAIN PAGE ----------------------
+# ---------------------- DAILY TRACK – MAIN PAGE (LOCAL DUCKDB DEVICES) ----------------------
 
 
 @login_required
@@ -900,86 +976,80 @@ def tracking_page(request):
     """
     Route tracking UI.
 
-    - Builds device list from AWS /vitals (and /vitals/devices if configured),
-      with local Device table as fallback.
-    - Reads ?device_id= and ?date= from query string.
-    - If both are present, calls /api/tracking to get trip segments.
+    Builds device list from local DuckDB tables:
+      - vitals_latest          (LoRa latest)
+      - vitals_latest_gsm      (GSM latest)
+      - aiaero_4444_secure_key (LoRa history)
+      - vitals_readings        (GSM history)
+
+    The actual track is loaded client-side from:
+        /api/track/<device_id>/?date=YYYY-MM-DD
+    (api_track_history)
     """
 
     devices: list[dict] = []
     seen: set[str] = set()
 
-    devices_url = (getattr(settings, "VITALS_DEVICES_URL", "") or "").strip()
-    base_url = (getattr(settings, "VITALS_API_URL", "") or "").strip()
-    secret = (
-        getattr(settings, "VITALS_API_SECRET", "")
-        or getattr(settings, "VITALS_SECRET", "")
-        or ""
-    ).strip()
-    timeout = int(getattr(settings, "VITALS_API_TIMEOUT", 10))
-    headers = {"x-ingest-secret": secret} if secret else {}
-
-    def _add_from_rows(rows):
-        if not isinstance(rows, list):
+    def add_device(dev_id: str | None, label: str | None = None):
+        if not dev_id:
             return
-        for it in rows:
-            if not isinstance(it, dict):
-                continue
-            dev_id = str(
-                it.get("device_id")
-                or it.get("node_id")
-                or it.get("id")
-                or ""
-            ).strip()
-            if not dev_id or dev_id in seen:
-                continue
-            label = str(
-                it.get("label")
-                or it.get("person")
-                or dev_id
-            ).strip()
-            devices.append({"device_id": dev_id, "label": label})
-            seen.add(dev_id)
+        dev_id = str(dev_id).strip()
+        if not dev_id or dev_id in seen:
+            return
+        label = (label or dev_id).strip()
+        devices.append({"device_id": dev_id, "label": label})
+        seen.add(dev_id)
 
-    # A) Try /devices registry first (if configured) – use active_minutes like live map
-    if devices_url:
-        try:
+    # ---- Pull devices from DuckDB ----
+    try:
+        with get_duckdb_conn() as con:
+            # 1) Latest LoRa
             try:
-                max_age = int(getattr(settings, "DEVICES_MAX_AGE_MIN", 1440))
-            except (TypeError, ValueError):
-                max_age = 1440
+                cur = con.execute(
+                    "SELECT DISTINCT device_id, label FROM vitals_latest "
+                    "WHERE device_id IS NOT NULL"
+                )
+                for dev_id, label in cur.fetchall():
+                    add_device(dev_id, label)
+            except Exception:
+                log.exception("tracking_page: DuckDB vitals_latest not available")
 
-            r = requests.get(
-                devices_url,
-                params={"active_minutes": str(max_age)},
-                headers=headers,
-                timeout=timeout,
-            )
-            log.info("tracking_page devices GET %s -> %s", r.url, r.status_code)
-            if r.ok and r.content:
-                payload = r.json()
-                rows = payload.get("items", payload)
-                if isinstance(rows, dict):
-                    rows = list(rows.values())
-                _add_from_rows(rows)
-        except requests.RequestException:
-            log.exception("tracking_page: devices registry fetch failed")
+            # 2) Latest GSM
+            try:
+                cur = con.execute(
+                    "SELECT DISTINCT device_id, label FROM vitals_latest_gsm "
+                    "WHERE device_id IS NOT NULL"
+                )
+                for dev_id, label in cur.fetchall():
+                    add_device(dev_id, label)
+            except Exception:
+                log.exception("tracking_page: DuckDB vitals_latest_gsm not available")
 
-    # B) Fallback: main VITALS_API_URL with no device_id (returns all latest)
-    if not devices and base_url:
-        try:
-            r = requests.get(base_url, headers=headers, timeout=timeout)
-            log.info("tracking_page base GET %s -> %s", r.url, r.status_code)
-            if r.ok and r.content:
-                payload = r.json()
-                rows = payload.get("items", payload)
-                if isinstance(rows, dict):
-                    rows = list(rows.values())
-                _add_from_rows(rows)
-        except requests.RequestException:
-            log.exception("tracking_page: base vitals fetch failed")
+            # 3) LoRa history
+            try:
+                cur = con.execute(
+                    "SELECT DISTINCT device_id FROM aiaero_4444_secure_key "
+                    "WHERE device_id IS NOT NULL"
+                )
+                for (dev_id,) in cur.fetchall():
+                    add_device(dev_id)
+            except Exception:
+                log.exception("tracking_page: DuckDB aiaero_4444_secure_key not available")
 
-    # C) Final fallback: local Device table (TEST01 etc.)
+            # 4) GSM history
+            try:
+                cur = con.execute(
+                    "SELECT DISTINCT device_id FROM vitals_readings "
+                    "WHERE device_id IS NOT NULL"
+                )
+                for (dev_id,) in cur.fetchall():
+                    add_device(dev_id)
+            except Exception:
+                log.exception("tracking_page: DuckDB vitals_readings not available")
+    except Exception:
+        log.exception("tracking_page: DuckDB device query failed")
+
+    # ---- Final fallback: local Django Device model ----
     if not devices:
         try:
             org = getattr(getattr(request.user, "profile", None), "organization", None)
@@ -988,21 +1058,14 @@ def tracking_page(request):
                 qs = qs.filter(organization=org)
             qs = qs.order_by("label", "device_id")[:200]
             for d in qs:
-                if d.device_id in seen:
-                    continue
-                devices.append(
-                    {
-                        "device_id": d.device_id,
-                        "label": d.label or d.device_id,
-                    }
-                )
-                seen.add(d.device_id)
+                add_device(d.device_id, d.label or d.device_id)
         except Exception:
             log.exception("tracking_page: local Device fallback failed")
 
+    # Sort for dropdown
     devices.sort(key=lambda x: (x["label"].lower(), x["device_id"].lower()))
 
-    # ---- Selected device + date from query ----
+    # ---- Selected device + date from query (for pre-fill only) ----
     selected_device_id = (request.GET.get("device_id") or "").strip()
     if not selected_device_id and devices:
         selected_device_id = devices[0]["device_id"]
@@ -1011,7 +1074,6 @@ def tracking_page(request):
 
     selected_date_input = ""      # YYYY-MM-DD for <input type="date">
     selected_date_display = ""    # dd-mm-yyyy for summary text
-    api_date_param = None         # what we send to /api/tracking
 
     if date_raw:
         dt = None
@@ -1025,33 +1087,8 @@ def tracking_page(request):
         if dt:
             selected_date_input = dt.strftime("%Y-%m-%d")
             selected_date_display = dt.strftime("%d-%m-%Y")
-            api_date_param = dt.strftime("%d-%m-%Y")  # dd-mm-yyyy to API
         else:
-            api_date_param = date_raw
-
-    # ---- Call /api/tracking if we have device + date ----
-    trip_segments: list[dict] = []
-    total_km = 0.0
-
-    if selected_device_id and api_date_param:
-        try:
-            api_url = request.build_absolute_uri("/api/tracking")
-            params = {
-                "device_id": selected_device_id,
-                "date": api_date_param,
-            }
-            r = requests.get(api_url, params=params, timeout=10)
-            log.info("tracking_page: /api/tracking GET %s -> %s", r.url, r.status_code)
-
-            if r.ok and r.content:
-                payload = r.json()
-                trip_segments = payload.get("trips") or payload.get("trip_segments") or []
-                try:
-                    total_km = float(payload.get("total_km", 0.0))
-                except Exception:
-                    total_km = 0.0
-        except Exception:
-            log.exception("tracking_page: failed to call /api/tracking")
+            selected_date_display = date_raw
 
     if not selected_date_display:
         selected_date_display = "No date selected"
@@ -1064,26 +1101,29 @@ def tracking_page(request):
         # for newer template:
         "selected_date_input": selected_date_input,
         "selected_date_display": selected_date_display,
-        "trip_segments": trip_segments,
-        "trip_segments_json": json.dumps(trip_segments, cls=DjangoJSONEncoder),
-        "total_km": f"{total_km:.1f}",
+        # not used by new JS, kept for compatibility:
+        "trip_segments": [],
+        "trip_segments_json": "[]",
+        "total_km": "0.0",
     }
     return render(request, "telemetry/tracking.html", ctx)
 
 
-# ---------------------- DAILY TRACK – JSON API ----------------------
+# ---------------------- DAILY TRACK – JSON API (DuckDB) ----------------------
 
 
 @login_required
 @require_GET
 def api_tracking(request):
     """
-    JSON endpoint used by the /tracking page.
+    JSON endpoint that returns trip segments for a device + date,
+    using local DuckDB history tables.
 
-    - Requires ?device_id=
-    - Requires ?date= (dd-mm-yyyy or yyyy-mm-dd)
-    - Calls VITALS_API_URL, filters rows by that date, groups into trips.
+    NOTE: Your current tracking.html uses /api/track/<device_id>/ (api_track_history).
+    This api_tracking() is provided for any pages that expect the
+    {trips: [...], total_km: X} structure.
     """
+
     device_id = (request.GET.get("device_id") or "").strip()
     date_raw = (request.GET.get("date") or "").strip()
 
@@ -1092,7 +1132,7 @@ def api_tracking(request):
     if not date_raw:
         return JsonResponse({"error": "date required"}, status=400)
 
-    # Parse date
+    # Parse date (accept dd-mm-yyyy or yyyy-mm-dd)
     target_date: date | None = None
     for fmt in ("%d-%m-%Y", "%Y-%m-%d"):
         try:
@@ -1104,63 +1144,51 @@ def api_tracking(request):
     if target_date is None:
         return JsonResponse({"error": "invalid date format"}, status=400)
 
-    # Call VITALS_API_URL
-    base_url = (getattr(settings, "VITALS_API_URL", "") or "").strip()
-    secret = (
-        getattr(settings, "VITALS_API_SECRET", "")
-        or getattr(settings, "VITALS_SECRET", "")
-        or ""
-    ).strip()
-    timeout = int(getattr(settings, "VITALS_API_TIMEOUT", 10))
-    headers = {"x-ingest-secret": secret} if secret else {}
-
+    # ----- Fetch history points from DuckDB (LoRa + GSM) -----
     rows = []
-    if base_url:
-        params = {"device_id": device_id, "limit": "1000"}
+    try:
+        with get_duckdb_conn() as con:
+            def _fetch_from(table_name: str):
+                try:
+                    q = f"""
+                        SELECT
+                            COALESCE(ts_iso, to_timestamp(ts_epoch)) AS ts,
+                            lat,
+                            lon
+                        FROM {table_name}
+                        WHERE device_id = ?
+                          AND date(COALESCE(ts_iso, to_timestamp(ts_epoch))) = ?
+                          AND lat IS NOT NULL
+                          AND lon IS NOT NULL
+                        ORDER BY ts
+                    """
+                    return con.execute(q, [device_id, target_date]).fetchall()
+                except Exception as e:
+                    log.warning("api_tracking: skip table %s (%s)", table_name, e)
+                    return []
+
+            # LoRa history
+            rows.extend(_fetch_from("aiaero_4444_secure_key"))
+            # GSM history
+            rows.extend(_fetch_from("vitals_readings"))
+
+    except Exception:
+        log.exception("api_tracking: DuckDB query failed")
+        return JsonResponse({"trips": [], "total_km": 0.0})
+
+    # Convert rows -> list of points with datetime
+    points: list[dict] = []
+    for ts, lat, lon in rows:
+        if ts is None or lat is None or lon is None:
+            continue
         try:
-            r = requests.get(base_url, headers=headers, params=params, timeout=timeout)
-            log.info("api_tracking: vitals GET %s -> %s", r.url, r.status_code)
-            if r.ok and r.content:
-                payload = r.json()
-                rows = payload.get("items", payload)
-                if isinstance(rows, dict):
-                    rows = list(rows.values())
-        except requests.RequestException:
-            log.exception("api_tracking: vitals fetch failed")
-
-    # Filter + normalize points
-    points = []
-
-    for it in rows or []:
-        dev_id = str(
-            it.get("device_id")
-            or it.get("node_id")
-            or it.get("id")
-            or ""
-        ).strip()
-        if dev_id != device_id:
+            points.append({"dt": ts, "lat": float(lat), "lon": float(lon)})
+        except Exception:
             continue
-
-        ts = _sanitize_ts(_parse_ts_any(it.get("timestamp") or it.get("ts")))
-        if not ts:
-            continue
-        if ts.date() != target_date:
-            continue
-
-        lat = _to_float(_pick(it, "lat", "last_lat", "latitude", "Latitude"))
-        lon = _to_float(_pick(it, "lon", "last_lon", "longitude", "Longitude"))
-        if lat is None or lon is None:
-            gps = it.get("gps") or {}
-            lat = _to_float(_pick(gps, "lat", "latitude", "Latitude"))
-            lon = _to_float(_pick(gps, "lon", "longitude", "Longitude"))
-        if lat is None or lon is None:
-            continue
-
-        points.append({"dt": ts, "lat": lat, "lon": lon})
 
     points.sort(key=lambda p: p["dt"])
 
-    # Group into trips with time gap
+    # ----- Group into trips with max time gap -----
     trips_raw: list[list[dict]] = []
     current: list[dict] = []
     last_time: datetime | None = None
@@ -1183,7 +1211,7 @@ def api_tracking(request):
     if current:
         trips_raw.append(current)
 
-    # Build payload
+    # ----- Build response payload with distances -----
     trips_payload = []
     total_km = 0.0
     trip_id = 1
@@ -1221,10 +1249,7 @@ def api_tracking(request):
         )
         trip_id += 1
 
-    # ✅ FIX: no json_dumps_params with 'cls' here
-    return JsonResponse(
-        {"trips": trips_payload, "total_km": round(total_km, 2)}
-    )
+    return JsonResponse({"trips": trips_payload, "total_km": round(total_km, 2)})
 
 
 # ---------------------- CSV DOWNLOAD FOR TRACK ----------------------

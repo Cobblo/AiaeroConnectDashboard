@@ -341,6 +341,7 @@
     const totalKmSpan    = document.getElementById("totalKmSpan");
     const startEndKmSpan = document.getElementById("startEndKmSpan");
 
+    // Default date = today if not set from Django
     if (!dateInput.value) {
       const today = new Date();
       const yyyy = today.getFullYear();
@@ -395,7 +396,7 @@
       if (event) event.preventDefault();
 
       const deviceId = deviceSelect.value;
-      const dateVal = dateInput.value;
+      const dateVal  = dateInput.value;
 
       if (!deviceId || !dateVal) {
         alert("Please select both device and date.");
@@ -407,14 +408,14 @@
       clearTrack();
 
       try {
-        const url = `/api/track/${encodeURIComponent(deviceId)}/?date=${encodeURIComponent(dateVal)}`;
-        const resp = await fetch(url);
+        const url  = `/api/track/${encodeURIComponent(deviceId)}/?date=${encodeURIComponent(dateVal)}`;
+        const resp = await fetch(url, {cache: "no-store"});
         if (!resp.ok) {
           showError("API error " + resp.status);
           return;
         }
 
-        const data = await resp.json();
+        const data  = await resp.json();
         const items = data.items || [];
 
         if (!items.length) {
@@ -427,7 +428,7 @@
         let totalKm = 0;
         let prevLat = null, prevLon = null;
         let firstLat = null, firstLon = null;
-        let lastLat = null, lastLon = null;
+        let lastLat  = null, lastLon  = null;
 
         items.forEach((p, idx) => {
           const lat = p.lat;
@@ -482,10 +483,12 @@
 
         const pointsCount = latlngs.length;
         statusText.textContent = `Track loaded: ${pointsCount} point(s)`;
-        trackMeta.textContent = `${deviceId} · ${dateVal} · ${pointsCount} point(s)`;
+        trackMeta.textContent  = `${deviceId} · ${dateVal} · ${pointsCount} point(s)`;
 
+        // Total path distance
         totalKmSpan.textContent = totalKm.toFixed(2);
 
+        // Straight line distance: start → end
         let startEndKm = 0;
         if (firstLat !== null && lastLat !== null) {
           startEndKm = haversineKm(firstLat, firstLon, lastLat, lastLon);
@@ -502,7 +505,7 @@
 
     downloadBtn.addEventListener("click", function () {
       const deviceId = deviceSelect.value;
-      const dateVal = dateInput.value;
+      const dateVal  = dateInput.value;
       if (!deviceId || !dateVal) {
         alert("Select device & date first.");
         return;
@@ -511,6 +514,7 @@
       window.location.href = url;
     });
 
+    // Auto-load on first open if both are present
     if (deviceSelect.value && dateInput.value) {
       loadTrack();
     }

@@ -82,6 +82,86 @@
     .top-bar-left small {
       opacity: 0.8;
     }
+
+    /* --- profile dropdown on right side --- */
+    .top-bar-right {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .profile-wrapper {
+      position: relative;
+    }
+    .profile-chip {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 12px;
+      border-radius: 999px;
+      background: #111520;
+      border: 1px solid #222933;
+      font-size: 13px;
+      color: #f9fafb;
+      cursor: pointer;
+      outline: none;
+    }
+    .profile-chip:hover {
+      background: #141b2a;
+    }
+    .avatar-circle {
+      width: 26px;
+      height: 26px;
+      border-radius: 50%;
+      background: #0056ff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 600;
+    }
+    .profile-name {
+      font-weight: 500;
+    }
+    .profile-arrow {
+      font-size: 10px;
+      opacity: 0.8;
+    }
+
+    .profile-dropdown {
+      position: absolute;
+      right: 0;
+      top: 110%;
+      min-width: 160px;
+      background: #111520;
+      border-radius: 12px;
+      border: 1px solid #222933;
+      box-shadow: 0 12px 30px rgba(0,0,0,0.6);
+      padding: 6px 0;
+      display: none;
+      z-index: 1000;
+    }
+    .profile-wrapper.open .profile-dropdown {
+      display: block;
+    }
+    .profile-dropdown a {
+      display: block;
+      padding: 8px 14px;
+      font-size: 13px;
+      color: #e4e4e4;
+      text-decoration: none;
+    }
+    .profile-dropdown a:hover {
+      background: #1f2937;
+    }
+
+    .login-btn {
+      color: #a0b4ff;
+      text-decoration: none;
+      font-size: 13px;
+    }
+    .login-btn:hover {
+      text-decoration: underline;
+    }
+
     #liveMap {
       height: 600px;
       border-radius: 14px;
@@ -156,6 +236,26 @@
         <div class="title">Live Device Connections</div>
         <small id="liveCount">Loading…</small>
       </div>
+
+      <div class="top-bar-right">
+        {% if user.is_authenticated %}
+          <div class="profile-wrapper" id="profileWrapper">
+            <button type="button" class="profile-chip" id="profileToggle">
+              <div class="avatar-circle">
+                {{ user.username|first|upper }}
+              </div>
+              <span class="profile-name">{{ user.username }}</span>
+              <span class="profile-arrow">▼</span>
+            </button>
+            <div class="profile-dropdown">
+              <a href="{% url 'account' %}">My account</a>
+              <a href="{% url 'logout' %}">Logout</a>
+            </div>
+          </div>
+        {% else %}
+          <a href="{% url 'login' %}" class="login-btn">Login</a>
+        {% endif %}
+      </div>
     </div>
 
     <div id="liveMap">
@@ -191,7 +291,7 @@
       const R = 6371000;
       const toRad = x => x * Math.PI / 180;
       const dLat = toRad(lat2 - lat1);
-      const dLon = toRad(lon2 - lon1);
+      const dLon = toRad(lat2 - lon1);
       const a =
         Math.sin(dLat/2)**2 +
         Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
@@ -354,6 +454,19 @@
       initMap();
       refresh();
       setInterval(refresh, 5000);
+
+      // profile dropdown behaviour
+      const wrapper = document.getElementById("profileWrapper");
+      const toggle = document.getElementById("profileToggle");
+      if (wrapper && toggle) {
+        toggle.addEventListener("click", (e) => {
+          e.stopPropagation();
+          wrapper.classList.toggle("open");
+        });
+        document.addEventListener("click", () => {
+          wrapper.classList.remove("open");
+        });
+      }
     });
   </script>
 </body>

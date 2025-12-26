@@ -2,6 +2,7 @@ from django.contrib import admin
 from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
+
 from telemetry import views
 
 urlpatterns = [
@@ -12,6 +13,10 @@ urlpatterns = [
     path("accounts/signup/", views.signup, name="signup"),
     path("accounts/account/", views.account, name="account"),
     path("accounts/profile/", views.profile, name="profile"),
+
+    # ✅ custom logout view (accepts GET, redirects to login)
+    path("accounts/logout/", views.logout_view, name="logout"),
+
     path(
         "accounts/password/request/",
         views.password_change_request,
@@ -25,7 +30,8 @@ urlpatterns = [
     path("person/", views.person_auto, name="person_auto"),
     path("person/<slug:pid>/", views.person_page, name="person_page"),
 
-    # ---- Route tracking page (THIS is the name used in template) ----
+    # ------------------ Tracking Page ------------------
+    # This is the route your tracking.html uses.
     path("tracking/", views.tracking_page, name="tracking_page"),
 
     # ------------------ Live Cloud Proxies ------------------
@@ -38,8 +44,14 @@ urlpatterns = [
     path("ingest/v1/", views.ingest_vitals, name="ingest_vitals"),
 
     # ------------------ Tracking APIs ------------------
+    # Used by the NEW tracking page (trip segments JSON)
     path("api/tracking/", views.api_tracking, name="api_tracking"),
+
+    # Used by tracking.html for the legacy “flat points” API:
+    #   /api/track/<device_id>/?date=YYYY-MM-DD
     path("api/track/<slug:device_id>/", views.api_track_history, name="api_track_history"),
+
+    # CSV download for a device+date
     path(
         "api/tracking/download/",
         views.api_tracking_download,

@@ -7,18 +7,30 @@ from dotenv import load_dotenv
 # ---------------------------------------------------------------------
 load_dotenv()
 
-# === Paths ===
+# =============================
+# 🔐 Django Basic Settings
+# =============================
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# === Security / Debug ===
 SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "django-insecure-dev-only")
 DEBUG = os.getenv("DJANGO_DEBUG", "true").lower() == "true"
-ALLOWED_HOSTS = [h.strip() for h in os.getenv("ALLOWED_HOSTS", "*").split(",") if h.strip()] or ["*"]
+
+ALLOWED_HOSTS = [
+    h.strip() for h in os.getenv("ALLOWED_HOSTS", "*").split(",") if h.strip()
+] or ["*"]
 
 # Optional if you reverse-proxy with HTTPS
-CSRF_TRUSTED_ORIGINS = [o.strip() for o in os.getenv("CSRF_TRUSTED_ORIGINS", "").split(",") if o.strip()]
+CSRF_TRUSTED_ORIGINS = [
+    o.strip()
+    for o in os.getenv("CSRF_TRUSTED_ORIGINS", "").split(",")
+    if o.strip()
+]
 
-# === Installed apps ===
+# =============================
+# 📦 Installed apps / middleware
+# =============================
+
 INSTALLED_APPS = [
     "django.contrib.admin",
     "django.contrib.auth",
@@ -32,7 +44,6 @@ INSTALLED_APPS = [
     "telemetry",
 ]
 
-# === Middleware ===
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
@@ -43,7 +54,10 @@ MIDDLEWARE = [
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
-# === URLs / Templates ===
+# =============================
+# 🔀 URLs / Templates
+# =============================
+
 ROOT_URLCONF = "core.urls"
 
 TEMPLATES = [
@@ -61,12 +75,23 @@ TEMPLATES = [
     },
 ]
 
-# === WSGI / ASGI ===
+# =============================
+# 🌐 WSGI / ASGI
+# =============================
+
 WSGI_APPLICATION = "core.wsgi.application"
 ASGI_APPLICATION = "core.asgi.application"
-CHANNEL_LAYERS = {"default": {"BACKEND": "channels.layers.InMemoryChannelLayer"}}
 
-# === Database ===
+CHANNEL_LAYERS = {
+    "default": {
+        "BACKEND": "channels.layers.InMemoryChannelLayer",
+    }
+}
+
+# =============================
+# 🗄 Django DB (for users, Device, Reading…)
+# =============================
+
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.sqlite3",
@@ -74,18 +99,27 @@ DATABASES = {
     }
 }
 
-# === Auth redirects ===
+# =============================
+# 🔐 Auth redirects
+# =============================
+
 LOGIN_URL = "/accounts/login/"
 LOGIN_REDIRECT_URL = "/"
 LOGOUT_REDIRECT_URL = "/accounts/login/"
 
-# === I18N / TZ ===
+# =============================
+# 🌏 Locale / Timezone
+# =============================
+
 LANGUAGE_CODE = "en-us"
 TIME_ZONE = "Asia/Kolkata"
 USE_I18N = True
 USE_TZ = True
 
-# === Static / Media ===
+# =============================
+# 🖼 Static / Media
+# =============================
+
 STATIC_URL = "/static/"
 STATICFILES_DIRS = [BASE_DIR / "static"]
 STATIC_ROOT = BASE_DIR / "staticfiles"
@@ -95,36 +129,41 @@ MEDIA_ROOT = BASE_DIR / "media"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
-# === Excel exports (local folder for generated workbooks) ===
+# =============================
+# 📊 Excel exports
+# =============================
+
 EXCEL_DIR = BASE_DIR / "excel_exports"
 EXCEL_DIR.mkdir(exist_ok=True)
 
 # =====================================================================
-# LIVE DATA SOURCES
+# LIVE DATA SOURCES (LoRa + GSM)
 # =====================================================================
 
-# (A) Ingest directly to Django (recommended for LoRa receiver)
+# (A) Ingest directly to Django (for LoRa receiver etc.)
 #     Devices POST to /ingest/v1 with header: x-ingest-secret: <INGEST_SECRET>
 INGEST_SECRET = os.getenv("INGEST_SECRET", "aiaero_4444_secure_key").strip()
 
 # Consider a device "online" if last post < N minutes
 DEVICES_MAX_AGE_MIN = int(os.getenv("DEVICES_MAX_AGE_MIN", "60"))
 
-# (B) Pull from AWS API Gateway (for cloud vitals – LoRa + GSM aggregators)
-# Default base (used only if ENV does not override)
-DEFAULT_VITALS_BASE = "https://9bttash411.execute-api.ap-south-1.amazonaws.com/vitals"
+# ---------------------------------------------------------------------
+# (B) LoRa Gateway APIs (your local HTTP endpoints)
+# ---------------------------------------------------------------------
 
-# --- LoRa / main vitals API ---
+# Default base if nothing is in .env
+DEFAULT_VITALS_BASE = os.getenv(
+    "DEFAULT_VITALS_BASE", "http://192.168.0.50:8000/vitals"
+).strip()
 
-# Main readings endpoint (query lambda)
-# Can be overridden by ENV, but falls back to DEFAULT_VITALS_BASE
+# Main readings endpoint
 VITALS_API_URL = (
     os.getenv("VITALS_API_URL")
     or os.getenv("VITALS_GET_URL")
     or DEFAULT_VITALS_BASE
 ).strip()
 
-# Devices registry endpoint (query lambda /devices)
+# Devices registry endpoint
 VITALS_DEVICES_URL = (os.getenv("VITALS_DEVICES_URL") or "").strip()
 if not VITALS_DEVICES_URL:
     # If API URL already ends with /devices, keep it
@@ -136,27 +175,36 @@ if not VITALS_DEVICES_URL:
     else:
         VITALS_DEVICES_URL = VITALS_API_URL.rstrip("/") + "/devices"
 
-# --- GSM / EC200U vitals API (NEW) ---
+# ---------------------------------------------------------------------
+# (C) GSM / Cellular Gateway APIs (local)
+# ---------------------------------------------------------------------
 
-# These are read from .env, e.g.:
-# VITALS_GSM_API_URL=https://zaz41a0b60.execute-api.ap-south-1.amazonaws.com/gsm_ingest
-# VITALS_GSM_DEVICES_URL=https://zaz41a0b60.execute-api.ap-south-1.amazonaws.com/gsm_ingest
+# Ingest URL used by GSM collector (if your views call it)
+GSM_INGEST_URL = (
+    os.getenv("VITALS_GSM_INGEST_URL")
+    or os.getenv("GSM_INGEST_URL", "")
+).strip()
+
+# API + devices listing for GSM (if you ever query them separately)
 VITALS_GSM_API_URL = os.getenv("VITALS_GSM_API_URL", "").strip()
 VITALS_GSM_DEVICES_URL = (
     os.getenv("VITALS_GSM_DEVICES_URL", "") or VITALS_GSM_API_URL
 ).strip()
 
-# Secret shared between firmware, ingest lambda and query lambda
+# Shared secret for LoRa + GSM APIs
 VITALS_API_SECRET = (
     os.getenv("VITALS_API_SECRET")
     or os.getenv("VITALS_SECRET")
     or INGEST_SECRET
 ).strip()
 
-# HTTP timeout for Django → AWS requests (seconds)
-VITALS_API_TIMEOUT = int(os.getenv("VITALS_API_TIMEOUT", "6"))
+# HTTP timeout for Django → gateway requests (seconds)
+VITALS_API_TIMEOUT = int(os.getenv("VITALS_API_TIMEOUT", "10"))
 
-# === Logging ===
+# =============================
+# 🪵 Logging
+# =============================
+
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
@@ -178,7 +226,10 @@ LOGGING = {
     },
 }
 
-# === EMAIL (password reset, etc.) ===
+# =============================
+# ✉️ Email (password reset, etc.)
+# =============================
+
 EMAIL_BACKEND = os.getenv(
     "EMAIL_BACKEND", "django.core.mail.backends.console.EmailBackend"
 )
@@ -200,13 +251,25 @@ PASSWORD_RESET_TIMEOUT = int(
     os.getenv("PASSWORD_RESET_TIMEOUT", str(60 * 60 * 24))
 )
 
-# === AWS / DynamoDB (if you later query it directly from Django) ===
+# =============================
+# 🧊 AWS / DynamoDB (legacy – optional)
+# =============================
+
 AWS_REGION = "ap-south-1"
 DYNAMODB_READINGS_TABLE = os.getenv(
     "DYNAMODB_READINGS_TABLE", "aiaero_4444_secure_key"
 )
-
-# Optional latest table name (matches your lambda_ingest TABLE_LATEST)
 DYNAMODB_LATEST_TABLE = os.getenv(
     "DYNAMODB_LATEST_TABLE", "vitals_latest"
 )
+
+# =============================
+# 🗄 DuckDB Local Database
+# =============================
+
+# Path to your local DuckDB file (used by views for vitals_latest, etc.)
+# In .env you have: DUCKDB_PATH=F:/ocf_fss
+_duck_path = os.getenv("DUCKDB_PATH", "").strip()
+if _duck_path and not os.path.isabs(_duck_path):
+    _duck_path = str(BASE_DIR / _duck_path)
+DUCKDB_PATH = _duck_path
